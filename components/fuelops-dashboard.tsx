@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { LogOut, ArrowDownToLine, BarChart3, CalendarDays, ChevronRight, Download, Droplets, Fuel, Gauge, ListOrdered, Menu, Plus, Printer, Trash2, Truck, X, Zap } from 'lucide-react'
+import { LogOut, ArrowDownToLine, BarChart3, CalendarDays, ChevronRight, Download, Droplets, Fuel, Gauge, ListOrdered, Menu, Plus, Printer, Trash2, X, Zap } from 'lucide-react'
 import { DB, EQUIPMENT, api, defaultMonth, equipmentReport, fetchDB, fmtBs, fmtDate, fmtL, monthLabel, months, vehicleStats, weekOf, ym } from '@/lib/store'
 import { supabase } from '@/lib/supabase'
 
@@ -13,6 +13,10 @@ type View = 'panel' | 'movs' | 'report'
 const GREEN = '#c6ff00', AMBER = '#ff8a00', CYAN = '#00d2ff'
 const localNow = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 const inputCls = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#00d2ff]'
+
+function Pickup({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M2 16v-3.5l3-1L7.2 8h5.3v8" /><path d="M12.5 10.5H22V16" /><path d="M7.9 8.7h3.1V11H6.6Z" /><path d="M2 16h2.2M8.8 16h6.4M19.8 16H22" /><circle cx="6.5" cy="16.5" r="2.3" /><circle cx="17.5" cy="16.5" r="2.3" /></svg>
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="flex flex-col gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>{children}</label>
@@ -184,7 +188,7 @@ export default function FuelOpsDashboard() {
     const { error } = await api.delVehicle(v.id)
     if (error) alert(error.message); else { setSelId(null); refresh() }
   }
-  const nav: [View, string, typeof Truck][] = [['panel', 'Panel y flota', Truck], ['movs', 'Movimientos', ListOrdered], ['report', 'Reportes mensuales', CalendarDays]]
+  const nav: [View, string, React.ComponentType<{ className?: string }>][] = [['panel', 'Panel y flota', Pickup], ['movs', 'Movimientos', ListOrdered], ['report', 'Reportes mensuales', CalendarDays]]
 
   const loadRows = (id?: string) => db.loads.filter(l => ym(l.date) === month && (!id || l.vehicleId === id)).sort((a, b) => b.date.localeCompare(a.date))
   const trRows = (id?: string) => db.transfers.filter(t => ym(t.datetime) === month && (!id || t.vehicleId === id)).sort((a, b) => b.datetime.localeCompare(a.datetime))
@@ -226,7 +230,7 @@ export default function FuelOpsDashboard() {
           {!db.vehicles.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay vehículos registrados. {isAdmin ? 'Agrega el primero para empezar.' : 'Pide a un administrador que los registre.'}</p>}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{db.vehicles.map(v => { const s = S(v.id); const pct = s.purchased ? Math.max(0, Math.min(100, (s.net / s.purchased) * 100)) : 0; const c = v.type === 'Diésel' ? CYAN : GREEN
             return <button key={v.id} onClick={() => { setSelId(v.id); setTab('loads') }} className="frost-card group text-left transition-all duration-200 hover:-translate-y-1 hover:border-white/20">
-              <div className="flex items-center gap-3 p-5 pb-3"><div className="grid size-11 place-items-center rounded-xl bg-white/[0.06] text-slate-300"><Truck className="size-5" /></div><div><h3 className="font-semibold text-white">{v.name}</h3><p className="mt-0.5 text-xs text-slate-500">{v.driver}</p></div></div>
+              <div className="flex items-center gap-3 p-5 pb-3"><div className="grid size-11 place-items-center rounded-xl bg-white/[0.06] text-slate-300"><Pickup className="size-6" /></div><div><h3 className="font-semibold text-white">{v.name}</h3><p className="mt-0.5 text-xs text-slate-500">{v.driver}</p></div></div>
               <div className="flex items-center gap-2 px-5"><span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[11px] font-semibold tracking-wider text-white">{v.plate}</span><span className="rounded-md bg-white/[0.05] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: c }}>{v.type}</span></div>
               <div className="px-5 pt-5"><div className="mb-2 flex justify-between"><span className="text-[11px] uppercase tracking-wider text-slate-500">Uso propio (neto / cargado)</span><span className="text-sm font-semibold text-white">{Math.round(pct)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: c, boxShadow: `0 0 12px ${c}66` }} /></div></div>
               <div className="grid grid-cols-3 gap-2 p-5"><Dot color={GREEN} label="CARGADO" value={fmtL(s.purchased)} /><Dot color={AMBER} label="TRASPASADO" value={fmtL(s.transferred)} /><Dot color={CYAN} label="NETO" value={fmtL(s.net)} /></div>

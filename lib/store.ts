@@ -34,6 +34,8 @@ export async function fetchDB(): Promise<DB> {
 
 export const api = {
   addVehicle: (v: Omit<Vehicle, 'id'>) => supabase.from('vehicles').insert(v),
+  updateVehicle: (id: string, v: Omit<Vehicle, 'id'>) => supabase.from('vehicles').update(v).eq('id', id),
+  delVehicle: (id: string) => supabase.from('vehicles').delete().eq('id', id),
   addLoad: (l: Record<string, unknown>) => supabase.from('loads').insert(l),
   addTransfer: (t: Record<string, unknown>) => supabase.from('transfers').insert(t),
   del: (table: 'loads' | 'transfers', id: string) => supabase.from(table).delete().eq('id', id),

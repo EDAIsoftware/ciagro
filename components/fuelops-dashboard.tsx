@@ -144,6 +144,8 @@ export default function FuelOpsDashboard() {
   const sum = (f: (id: string) => number) => db.vehicles.reduce((a, v) => a + f(v.id), 0)
   const purchased = sum(id => S(id).purchased), cost = sum(id => S(id).cost), transferred = sum(id => S(id).transferred), opening = sum(id => S(id).opening)
   const diesel = db.vehicles.filter(v => v.type === 'Diésel').reduce((a, v) => a + S(v.id).purchased, 0)
+  const totalKm = sum(id => S(id).km)
+   const totalOwnEst = sum(id => S(id).ownEst)
   const plate = (id: string) => db.vehicles.find(v => v.id === id)?.plate ?? '—'
   const selected = db.vehicles.find(v => v.id === selId) ?? null
   const equipCount = rep.length
@@ -251,11 +253,12 @@ export default function FuelOpsDashboard() {
           </div>
         </div>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat icon={Droplets} color={GREEN} label="Compras nuevas del mes" value={fmtL(purchased)} sub={`${fmtBs(cost)} en facturas`} />
-          <Stat icon={ArrowDownToLine} color={AMBER} label="Transferido a maquinaria" value={fmtL(transferred)} sub={`${equipCount} equipo${equipCount === 1 ? '' : 's'} abastecido${equipCount === 1 ? '' : 's'}`} />
-          <Stat icon={Gauge} color={CYAN} label="Stock total operativo" value={fmtL(purchased + opening)} sub={`${fmtL(opening)} remanente + ${fmtL(purchased)} compras`} />
-          <Stat icon={Zap} color="#4d9bff" label="Diésel vs. gasolina" value={`${fmtL(diesel)} / ${fmtL(purchased - diesel)}`} sub={purchased ? `${Math.round((diesel / purchased) * 100)}% es diésel` : 'Sin cargas en el mes'} />
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+           <Stat icon={Droplets} color={GREEN} label="Compras nuevas del mes" value={fmtL(purchased)} sub={`${fmtBs(cost)} en facturas`} />
+           <Stat icon={ArrowDownToLine} color={AMBER} label="Transferido a maquinaria" value={fmtL(transferred)} sub={`${equipCount} equipo${equipCount === 1 ? '' : 's'} abastecido${equipCount === 1 ? '' : 's'}`} />
+           <Stat icon={Gauge} color={CYAN} label="Stock total operativo" value={fmtL(purchased + opening)} sub={`${fmtL(opening)} remanente + ${fmtL(purchased)} compras`} />
+           <Stat icon={Zap} color="#4d9bff" label="Diésel vs. gasolina" value={`${fmtL(diesel)} / ${fmtL(purchased - diesel)}`} sub={purchased ? `${Math.round((diesel / purchased) * 100)}% es diésel` : 'Sin cargas en el mes'} />
+           <Stat icon={Gauge} color="#00d2ff" label="Consumo rodaje flota" value={fmtL(totalOwnEst)} sub={`${totalKm.toLocaleString('es-BO')} km recorridos`} />
         </section>
 
         {view === 'panel' && <section className="mt-10">
@@ -266,8 +269,12 @@ export default function FuelOpsDashboard() {
               <div className="flex items-center gap-3 p-5 pb-3"><div className="grid size-11 place-items-center rounded-xl bg-white/[0.06] text-slate-300"><Pickup className="size-6" /></div><div><h3 className="font-semibold text-white">{v.name}</h3><p className="mt-0.5 text-xs text-slate-500">{v.driver}</p></div></div>
               <div className="flex items-center gap-2 px-5"><span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[11px] font-semibold tracking-wider text-white">{v.plate}</span><span className="rounded-md bg-white/[0.05] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: c }}>{v.type}</span></div>
               <div className="px-5 pt-5"><div className="mb-2 flex justify-between"><span className="text-[11px] uppercase tracking-wider text-slate-500">Nivel estimado del tanque</span><span className="text-sm font-semibold text-white">{Math.round(pct)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: c, boxShadow: `0 0 12px ${c}66` }} /></div></div>
-              <div className="grid grid-cols-3 gap-2 p-5"><Dot color={GREEN} label="CARGADO" value={fmtL(s.purchased)} /><Dot color={AMBER} label="TRASPASADO" value={fmtL(s.transferred)} /><Dot color={CYAN} label="EN TANQUE ~" value={fmtL(s.tankLevel)} /></div>
-              <div className="flex items-center justify-between border-t border-white/[0.06] px-5 py-3 text-xs text-slate-500 group-hover:text-white"><span>Ver detalle y movimientos</span><ChevronRight className="size-4" /></div>
+              <div className="grid grid-cols-4 gap-2 p-5">
+                <Dot color={GREEN} label="CARGADO" value={fmtL(s.purchased)} />
+                <Dot color={AMBER} label="TRASPASO" value={fmtL(s.transferred)} />
+                <Dot color="#00d2ff" label="RECORRIDO" value={`${s.km.toLocaleString('es-BO')} km`} />
+                <Dot color={CYAN} label="EN TANQUE ~" value={fmtL(s.tankLevel)} />
+             </div><div className="flex items-center justify-between border-t border-white/[0.06] px-5 py-3 text-xs text-slate-500 group-hover:text-white"><span>Ver detalle y movimientos</span><ChevronRight className="size-4" /></div>
             </button> })}</div>
         </section>}
 

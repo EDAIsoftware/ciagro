@@ -173,8 +173,8 @@ export default function FuelOpsDashboard() {
     } else {
       if (!f.datetime) return 'Ingresa fecha y hora.'
       if (!f.person?.trim()) return 'Indica quién retira el combustible.'
-      const avail = veh.initialLiters + db!.loads.filter(l => l.vehicleId === veh.id).reduce((a, l) => a + l.liters, 0) - db!.transfers.filter(t => t.vehicleId === veh.id).reduce((a, t) => a + t.liters, 0)
-      if (liters > avail) return `Solo hay ${fmtL(avail)} disponibles (stock inicial + facturas − salidas). Si falta una factura o el stock inicial, regístralo primero.`
+      //const avail = veh.initialLiters + db!.loads.filter(l => l.vehicleId === veh.id).reduce((a, l) => a + l.liters, 0) - db!.transfers.filter(t => t.vehicleId === veh.id).reduce((a, t) => a + t.liters, 0)
+      //if (liters > avail) return `Solo hay ${fmtL(avail)} disponibles (stock inicial + facturas − salidas). Si falta una factura o el stock inicial, regístralo primero.`
       const { error } = await api.addTransfer({ vehicle_id: veh.id, datetime: f.datetime, liters, equipment: f.equipment, person: f.person.trim(), notes: f.notes?.trim() ?? '' })
       if (error) return error.message
       setMonth(ym(f.datetime))
@@ -185,6 +185,13 @@ export default function FuelOpsDashboard() {
   const del = (table: 'loads' | 'transfers') => async (id: string) => { const { error } = await api.del(table, id); error ? alert(error.message) : refresh() }
   const delLoad = isAdmin ? del('loads') : undefined
   const delTransfer = isAdmin ? del('transfers') : undefined
+  const updateNote = async (id: string, currentNote: string) => {
+  const newNote = prompt('Ingresa o actualiza la Orden de Trabajo (OT) / Notas:', currentNote || '')
+  if (newNote === null) return // si cancela, no hace nada
+  const { error } = await supabase.from('transfers').update({ notes: newNote.trim() }).eq('id', id)
+  if (error) alert('Error al actualizar OT: ' + error.message)
+  else refresh()
+}
   async function delVehicle(v: DB['vehicles'][number]) {
     const nl = db!.loads.filter(l => l.vehicleId === v.id).length, nt = db!.transfers.filter(t => t.vehicleId === v.id).length
     if (!confirm(`¿Eliminar ${v.name} (${v.plate})? Se borrarán también sus ${nl} cargas y ${nt} salidas. Esto no se puede deshacer.`)) return
@@ -197,8 +204,30 @@ export default function FuelOpsDashboard() {
   const trRows = (id?: string) => db.transfers.filter(t => ym(t.datetime) === month && (!id || t.vehicleId === id)).sort((a, b) => b.datetime.localeCompare(a.datetime))
   const openingRows = (id?: string) => db.vehicles.filter(v => !id || v.id === id).filter(v => S(v.id).showOpening).map(v => ({ id: 'open-' + v.id, locked: true, cells: [fmtDate(month + '-01'), ...(id ? [] : [v.plate]), <span key="o" className="rounded-md border border-[#00d2ff]/30 bg-[#00d2ff]/10 px-2 py-1 text-[10px] font-bold tracking-wider" style={{ color: CYAN }}>REMANENTE MES ANTERIOR</span>, <span key="l" style={{ color: CYAN }}>{fmtL(S(v.id).opening)}</span>, `${fmtBs(0)} · arrastre`, '—', '—', '—'] }))
   const loadTable = (id?: string) => <Table heads={['Fecha', ...(id ? [] : ['Placa']), 'Factura', 'Litros', 'Importe', 'Odómetro', 'Conductor', 'Lleno']} onDelete={delLoad} rows={[...openingRows(id), ...loadRows(id).map(l => ({ id: l.id, cells: [fmtDate(l.date), ...(id ? [] : [plate(l.vehicleId)]), l.invoice, <span key="l" style={{ color: GREEN }}>{fmtL(l.liters)}</span>, fmtBs(l.cost), `${l.odometer.toLocaleString('es-BO')} km`, l.driver, l.fullTank ? '✓' : '—'] }))]} />
-  const trTable = (id?: string) => <Table heads={['Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'Motivo']} onDelete={delTransfer} rows={trRows(id).map(t => ({ id: t.id, cells: [fmtDate(t.datetime), ...(id ? [] : [plate(t.vehicleId)]), <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, t.equipment, t.person, t.notes || '—'] }))} />
-
+  const trTable = (id?: string) => <Table 
+  heads={['Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'OT / Motivo']} 
+  onDelete={delTransfer} 
+  rows={trRows(id).map(t => ({ 
+    id: t.id, 
+    cells: [
+      fmtDate(t.datetime), 
+      ...(id ? [] : [plate(t.vehicleId)]), 
+      <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, 
+      t.equipment, 
+      t.person, 
+      <button 
+        key="n" 
+        onClick={() => updateNote(t.id, t.notes)} 
+        title="Clic para editar OT"
+        className="group flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1 hover:border-[#00d2ff]/40 hover:bg-[#00d2ff]/10"
+      >
+        <span className={t.notes ? 'text-white' : 'text-slate-500 italic'}>
+          {t.notes || '+ Agregar OT'}
+        </span>
+      </button>
+    ] 
+  }))} 
+/>
   return <main className="print-root min-h-screen bg-[#0b0f17] text-slate-200">
     <aside className={`no-print fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/[0.07] bg-[#0d131f] p-5 transition-transform lg:translate-x-0 ${menu ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid size-9 place-items-center rounded-xl text-[#0b0f17]" style={{ background: GREEN }}><Fuel className="size-5" strokeWidth={2.5} /></div><div><div className="text-[15px] font-bold tracking-[0.18em] text-white">EDAI</div><div className="text-[9px] font-medium tracking-[0.22em] text-slate-500">FUELOPS</div></div></div><button onClick={() => setMenu(false)} className="text-slate-500 lg:hidden"><X className="size-5" /></button></div>

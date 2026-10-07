@@ -7,7 +7,7 @@ export type Load = { id: string; vehicleId: string; date: string; liters: number
 export type Transfer = { id: string; vehicleId: string; datetime: string; liters: number; equipment: string; person: string; notes: string }
 export type DB = { vehicles: Vehicle[]; loads: Load[]; transfers: Transfer[] }
 
-export const EQUIPMENT = ['Excavadora CAT 320', 'Retroexcavadora 01', 'Generador Principal', 'Maquinaria Agrícola', 'Taller']
+export const EQUIPMENT = ['Maquinaria', 'Taller', 'Comercial', 'Almacen']
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 export const uid = () => Math.random().toString(36).slice(2, 10)

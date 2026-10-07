@@ -145,7 +145,7 @@ export function vehicleStats(db: DB, id: string, m: string) {
     km = Math.max(0, odoEnd(db, v, m) - odoEnd(db, v, p))
     ownEst = km / rate
     
-    // 3. Remanente al cierre: (Lo que había + lo cargado) - Maquinaria - Rodaje de la camioneta
+    // 3. Remanente al cierre: (Lo que había + lo cargado) - Maquinaria - Rodaje de la camionetad
     const totalDisponible = opening + purchased
     closing = totalDisponible - transferred - ownEst
     

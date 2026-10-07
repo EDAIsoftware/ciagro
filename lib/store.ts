@@ -171,25 +171,6 @@ export function vehicleStats(db: DB, id: string, m: string) {
   }
 }
   
-  return { 
-    loads, 
-    transfers, 
-    purchased, 
-    cost, 
-    transferred, 
-    opening: Math.max(0, opening), 
-    ownEst, 
-    closing, 
-    tankLevel: Math.max(0, closing), // Saldo real en tanque
-    km, 
-    rate, 
-    rateReal, 
-    segments, 
-    showOpening, 
-    pricePerL: purchased ? cost / purchased : 0 
-  }
-}
-
 export function equipmentReport(db: DB, m: string) {
   const avg = (id: string) => { const s = vehicleStats(db, id, m); return s.pricePerL }
   const all = db.loads.filter(l => ym(l.date) === m)

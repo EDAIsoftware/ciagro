@@ -102,30 +102,92 @@ export function fullToFull(db: DB, id: string) {
 
 // Stock estimado en el tanque al cierre del mes x (acumulado desde el inicio)
 function stockEnd(db: DB, v: Vehicle, x: string, rate: number) {
+  // 1. Cargas y Salidas acumuladas hasta ese mes
   const L = sumL(db.loads.filter(l => l.vehicleId === v.id && ym(l.date) <= x))
   const T = sumL(db.transfers.filter(t => t.vehicleId === v.id && ym(t.datetime) <= x))
-  return v.initialLiters + L - T - (odoEnd(db, v, x) - odoBase(db, v)) / rate
+  
+  // 2. Kilómetros totales recorridos hasta el mes x
+  const totalKm = Math.max(0, odoEnd(db, v, x) - odoBase(db, v))
+  
+  // 3. Litros consumidos por el motor de la camioneta
+  const ownBurned = totalKm / (rate > 0 ? rate : 8.0)
+  
+  // 4. Lo que REALMENTE queda en el tanque (remanente físico neto)
+  const realBalance = v.initialLiters + L - T - ownBurned
+  
+  // Si tiene capacidad declarada, no puede haber más que el tanque lleno
+  return Math.max(0, realBalance)
 }
 
 export function vehicleStats(db: DB, id: string, m: string) {
   const v = db.vehicles.find(x => x.id === id)
   const loads = db.loads.filter(l => l.vehicleId === id && ym(l.date) === m).sort((a, b) => a.date.localeCompare(b.date))
   const transfers = db.transfers.filter(t => t.vehicleId === id && ym(t.datetime) === m)
+  
   const purchased = sumL(loads)
   const cost = loads.reduce((s, l) => s + l.cost, 0)
   const transferred = sumL(transfers)
-  let opening = 0, closing = 0, km = 0, ownEst = 0, rate = 10, rateReal = false, segments = 0, showOpening = false
+  
+  let opening = 0, closing = 0, km = 0, ownEst = 0, rate = 8.0, rateReal = false, segments = 0, showOpening = false
+  
   if (v) {
     const ftf = fullToFull(db, id)
-    rate = ftf.rate ?? (v.avgKmL > 0 ? v.avgKmL : 10); rateReal = ftf.rate !== null; segments = ftf.segments
+    rate = ftf.rate ?? (v.avgKmL > 0 ? v.avgKmL : 8.0)
+    rateReal = ftf.rate !== null
+    segments = ftf.segments
+    
     const p = prevYm(m)
-    opening = stockEnd(db, v, p, rate)
-    closing = stockEnd(db, v, m, rate)
+    
+    // 1. Remanente NETO del mes anterior (ya descontado rodaje previo):
+    opening = Math.max(0, stockEnd(db, v, p, rate))
+    
+    // 2. Kilómetros y consumo estimado por odómetro de ESTE mes:
     km = Math.max(0, odoEnd(db, v, m) - odoEnd(db, v, p))
     ownEst = km / rate
+    
+    // 3. Remanente al cierre: (Lo que había + lo cargado) - Maquinaria - Rodaje de la camioneta
+    const totalDisponible = opening + purchased
+    closing = totalDisponible - transferred - ownEst
+    
     showOpening = m >= ym(v.initialDate) && opening > 0.05
   }
-  return { loads, transfers, purchased, cost, transferred, opening: Math.max(0, opening), ownEst, closing, tankLevel: Math.max(0, closing), km, rate, rateReal, segments, showOpening, pricePerL: purchased ? cost / purchased : 0 }
+  
+  return { 
+    loads, 
+    transfers, 
+    purchased, 
+    cost, 
+    transferred, 
+    opening: Math.max(0, opening), 
+    ownEst, 
+    closing, 
+    tankLevel: Math.max(0, closing), // Saldo real en tanque
+    km, 
+    rate, 
+    rateReal, 
+    segments, 
+    showOpening, 
+    pricePerL: purchased ? cost / purchased : 0 
+  }
+}
+  
+  return { 
+    loads, 
+    transfers, 
+    purchased, 
+    cost, 
+    transferred, 
+    opening: Math.max(0, opening), 
+    ownEst, 
+    closing, 
+    tankLevel: Math.max(0, closing), // Saldo real en tanque
+    km, 
+    rate, 
+    rateReal, 
+    segments, 
+    showOpening, 
+    pricePerL: purchased ? cost / purchased : 0 
+  }
 }
 
 export function equipmentReport(db: DB, m: string) {

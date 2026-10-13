@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Camera, ClipboardCheck, FileText, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Camera, ClipboardCheck, FileText, Pencil, Plus, Printer, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type V = { id: string; name: string; plate: string; driver: string; odometer: number; area: string; year: string; chassis: string; km_next: number | null; km_interval: number | null }
@@ -54,6 +54,7 @@ const TITLE: Record<Kind, string> = { inspeccion: 'Inspección de vehículo', re
 const COL: Record<St, string> = { B: 'border-[#c6ff00] bg-[#c6ff00]/15 text-[#c6ff00]', R: 'border-[#ff8a00] bg-[#ff8a00]/15 text-[#ffae47]', M: 'border-red-500 bg-red-500/15 text-red-300', N: 'border-slate-400 bg-slate-400/15 text-slate-300' }
 const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#00d2ff]'
 
+const plain = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/-/g, '')
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10)
 const fmtD = (s: string) => s.slice(0, 10).split('-').reverse().join('/')
 const itemPaths = (i: Insp) => [...(i.photos ?? []).map(p => p.path), ...Object.values(i.items).map(x => x.photo).filter(Boolean) as string[]]
@@ -299,6 +300,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const [own, setOwn] = useState<V | null>(null)
   const [mt, setMt] = useState<V | null>(null)
   const [area, setArea] = useState('')
+  const [q, setQ] = useState('')
   const [err, setErr] = useState('')
 
   const load = useCallback(async () => {
@@ -330,13 +332,14 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const vOf = (id: string) => vs.find(x => x.id === id)
   const start = (v: V, k: Kind) => { setCur(v); setKind(k); setScr('form') }
   const areas = [...new Set(vs.map(v => v.area).filter(Boolean))].sort()
-  const shown = vs.filter(v => !area || v.area === area)
-  const open = obs.filter(o => { const v = vOf(o.vehicle_id); return v && (!area || v.area === area) })
+  const words = plain(q).split(/\s+/).filter(Boolean)
+  const shown = vs.filter(v => (!area || v.area === area) && (!words.length || words.every(w => plain(`${v.plate} ${v.driver} ${v.name} ${v.area}`).includes(w))))
+  const open = obs.filter(o => shown.some(v => v.id === o.vehicle_id))
 
   if (scr === 'form' && cur) return <Form v={cur} kind={kind} who={who} onClose={() => setScr('list')} onDone={id => { load(); openRep(id) }} />
   if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} />
   if (scr === 'matrix') return <Matrix vs={shown} ins={ins} onBack={() => setScr('list')} />
-  if (scr === 'pend') return <Panel obs={obs} vs={vs} area={area} who={who} onBack={() => setScr('list')} onDone={load} />
+  if (scr === 'pend') return <Panel obs={obs} vs={shown} area="" who={who} onBack={() => setScr('list')} onDone={load} />
   if (scr === 'hist' && cur) return <div className="no-print"><button onClick={() => { setCur(null); setScr('list') }} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
     <h2 className="text-2xl font-semibold text-white">Historial · {cur.name} <span className="font-mono text-base text-slate-400">{cur.plate}</span></h2>
     <p className="mt-1 text-xs text-slate-500">{cur.driver}{cur.area && ` · ${cur.area}`}{cur.km_next != null && ` · Próximo mantenimiento a los ${cur.km_next.toLocaleString('es-BO')} km (cada ${(cur.km_interval ?? 8000).toLocaleString('es-BO')} km)`}</p>
@@ -351,11 +354,12 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
     <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c6ff00]">Estado de la flota</p><h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Inspecciones de vehículos</h2><p className="mt-1 text-sm text-slate-500">Inspección cada 15 días · Taller y recepción cuando sea necesario</p></div>
       <div className="flex flex-wrap gap-2"><button onClick={() => setScr('matrix')} className="flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-semibold text-slate-300 hover:bg-white/5"><FileText className="size-4" />Informe general</button>{isAdmin && <button onClick={() => setVm('new')} className="flex h-11 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar vehículo</button>}</div></div>
     <button onClick={() => setScr('pend')} className="frost-card mb-4 flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left hover:border-white/20"><span className="text-sm font-semibold text-white">Pendientes por prioridad</span>{(['A', 'M', 'B'] as Pri[]).map(k => <span key={k} className="flex items-center gap-2 text-sm text-slate-300"><span className="size-3 rounded-full" style={{ background: PRI[k].c }} /><b className="text-white">{open.filter(o => o.priority === k).length}</b> {PRI[k].l.toLowerCase()}s</span>)}<span className="ml-auto text-xs text-slate-500">Ver panel →</span></button>
+    <div className="relative mb-4"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por placa, responsable o marca…" className={inp} style={{ paddingLeft: 40 }} /></div>
     {!!areas.length && <div className="mb-4 flex flex-wrap gap-2">{['', ...areas].map(a => <button key={a || 'todas'} onClick={() => setArea(a)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${area === a ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{a || 'Todas'}</button>)}</div>}
     {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste taller.sql en Supabase?</p>}
     {overdue > 0 && <p className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{overdue} vehículo{overdue === 1 ? '' : 's'} con la inspección de 15 días vencida o pendiente.</p>}
     {(() => { const near = shown.filter(v => v.km_next != null && v.km_next - v.odometer <= 2000); const red = near.filter(v => v.km_next! - v.odometer <= 1000).length; return near.length > 0 && <p className="mb-5 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: (red ? RED : AMBER) + '55', background: (red ? RED : AMBER) + '14', color: red ? '#fca5a5' : '#fdba74' }}>{near.length} vehículo{near.length === 1 ? '' : 's'} con mantenimiento próximo o vencido (menos de 2.000 km){red ? ` · ${red} urgente${red === 1 ? '' : 's'}` : ''}.</p> })()}
-    {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</p>}
+    {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">{q || area ? 'Sin resultados con ese filtro.' : <>No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</>}</p>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{shown.map(v => { const s = status(v.id); const m = s.l ? Object.values(s.l.items).filter((i: Item) => i.s === 'M').length : 0
       const left = v.km_next != null ? v.km_next - v.odometer : null; const mc = left == null ? '' : left <= 1000 ? RED : left <= 2000 ? AMBER : GREEN
       const mo = obs.filter(o => o.vehicle_id === v.id)

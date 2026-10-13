@@ -19,7 +19,7 @@ const BUCKET = 'inspecciones'
 const NT = ['Extintor', 'Botiquín', 'Triángulo']
 const LV = ['Reserva (E)', '¼ de tanque', '½ tanque', '¾ de tanque', 'Lleno (F)']
 const INSP: Group[] = [
-  ['Motor', ['Limpieza de motor', 'Correas']],
+  ['Motor', ['Nivel de aceite', 'Agua de radiador', 'Agua limpia parabrisas', 'Agua de batería', 'Nivel líquido de freno', 'Limpieza de motor', 'Correas']],
   ['Luces', ['Luz media / alta / baja', 'Luz de retro', 'Luz de freno', 'Luz de parqueo', 'Direccionales', 'Luz del tablero', 'Luz interior de cabina']],
   ['Accesorios', ['Cinturones de seguridad', 'Extintor', 'Botiquín', 'Triángulo', 'Bocina']],
   ['Vidrios y espejos', ['Parabrisas delantero', 'Parabrisas trasero', 'Vidrios de puertas', 'Espejo retrovisor', 'Espejo retrovisor izq.', 'Espejo retrovisor der.']],
@@ -100,7 +100,7 @@ function SigPad({ onChange }: { onChange: (d: string) => void }) {
 function Form({ v, kind, who, onClose, onDone }: { v: V; kind: Kind; who: string; onClose: () => void; onDone: (id: string) => void }) {
   const groups = kind === 'inspeccion' ? INSP : kind === 'taller' ? TALLER : RECEP
   const all = groups.flatMap(g => g[1])
-  const [h, setH] = useState({ date: today(), place: '', km: '', driver: v.driver, tipo: 'Camioneta', pasajeros: '', interno: '', responsable: v.driver, notes: '' })
+  const [h, setH] = useState({ date: today(), place: 'CIAGRO', km: '', driver: v.driver, tipo: 'Camioneta', pasajeros: '', interno: '', responsable: v.driver, notes: '' })
   const [lvl, setLvl] = useState<number | null>(null)
   const [items, setItems] = useState<Record<string, Item>>({})
   const [ph, setPh] = useState<Record<string, { blob: Blob; url: string }>>({})
@@ -273,6 +273,11 @@ function Panel({ obs, vs, area, who, onBack, onDone, vehicleId, embedded }: { ob
   const [urls, setUrls] = useState<Record<string, string>>({})
   const list = obs.filter(o => { const v = vs.find(x => x.id === o.vehicle_id); return v && (!area || v.area === area) && (!vehicleId || o.vehicle_id === vehicleId) }).sort((a, b) => 'AMB'.indexOf(a.priority) - 'AMB'.indexOf(b.priority) || b.created_at.localeCompare(a.created_at))
   useEffect(() => { const ps = obs.map(o => o.photo).filter(Boolean) as string[]; if (ps.length) supabase.storage.from(BUCKET).createSignedUrls(ps, 3600).then(({ data }) => data && setUrls(Object.fromEntries(data.map(d => [d.path ?? '', d.signedUrl])))) }, [obs])
+  async function setPri(o: Obs, k: Pri) {
+    if (k === o.priority) return
+    const { error } = await supabase.from('insp_observations').update({ priority: k }).eq('id', o.id)
+    error ? alert(error.message) : onDone()
+  }
   async function done(o: Obs) {
     if (!confirm('¿Marcar esta observación como resuelta?')) return
     const { error } = await supabase.from('insp_observations').update({ done: true, done_at: new Date().toISOString(), done_by: who }).eq('id', o.id)
@@ -284,7 +289,7 @@ function Panel({ obs, vs, area, who, onBack, onDone, vehicleId, embedded }: { ob
     {embedded ? <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Pendientes de esta camioneta</h3> : <h2 className="text-2xl font-semibold text-white">Pendientes por prioridad{area && ` · ${area}`}</h2>}
     <div className="mt-4 grid grid-cols-3 gap-3">{(['A', 'M', 'B'] as Pri[]).map(k => <div key={k} className="keep-bg rounded-xl p-4 text-center" style={{ ...bg(PRI[k].c), color: k === 'M' ? '#000' : '#fff' }}><p className="text-3xl font-bold">{list.filter(o => o.priority === k).length}</p><p className="text-[11px] font-bold tracking-widest">{PRI[k].l}</p></div>)}</div>
     <div className="mt-5 flex flex-col gap-2">{list.map(o => { const v = vs.find(x => x.id === o.vehicle_id)!
-      return <div key={o.id} className="frost-card flex gap-3 overflow-hidden"><div className="keep-bg w-3 shrink-0" style={bg(PRI[o.priority].c)} /><div className="flex flex-1 flex-wrap items-center gap-3 py-3 pr-4"><div className="min-w-0 flex-1"><p className="text-sm text-white">{o.text}</p><p className="mt-1 text-[11px] text-slate-500"><b className="font-mono text-slate-300">{v.plate}</b> · {v.name} · {v.driver}{v.area && ` · ${v.area}`} · {o.created_at.slice(0, 10).split('-').reverse().join('/')}</p>{o.photo && urls[o.photo] && <img src={urls[o.photo]} alt="" className="mt-2 h-20 rounded-lg" />}</div><button onClick={() => done(o)} className="no-print h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5">Resuelto</button></div></div> })}
+      return <div key={o.id} className="frost-card flex gap-3 overflow-hidden"><div className="keep-bg w-3 shrink-0" style={bg(PRI[o.priority].c)} /><div className="flex flex-1 flex-wrap items-center gap-3 py-3 pr-4"><div className="min-w-0 flex-1"><p className="text-sm text-white">{o.text}</p><p className="mt-1 text-[11px] text-slate-500"><b className="font-mono text-slate-300">{v.plate}</b> · {v.name} · {v.driver}{v.area && ` · ${v.area}`} · {o.created_at.slice(0, 10).split('-').reverse().join('/')}</p>{o.photo && urls[o.photo] && <img src={urls[o.photo]} alt="" className="mt-2 h-20 rounded-lg" />}</div><div className="no-print flex items-center gap-1.5" title="Cambiar prioridad">{(['A', 'M', 'B'] as Pri[]).map(k => <button key={k} onClick={() => setPri(o, k)} aria-label={`Prioridad ${PRI[k].l}`} className="size-6 rounded-full border-2" style={{ background: PRI[k].c, borderColor: o.priority === k ? '#fff' : 'transparent', opacity: o.priority === k ? 1 : 0.35 }} />)}</div><button onClick={() => done(o)} className="no-print h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5">Resuelto</button></div></div> })}
       {!list.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay observaciones pendientes.</p>}</div></div>
 }
 

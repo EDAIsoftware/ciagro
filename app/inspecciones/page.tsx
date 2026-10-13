@@ -27,7 +27,7 @@ export default function InspeccionesPage() {
   return <main className="print-root min-h-screen bg-[#0b0f17] text-slate-200">
     <header className="no-print flex h-[68px] items-center justify-between border-b border-white/[0.07] px-5 sm:px-8">
       <a href="/" className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft className="size-4" />Control de combustible</a>
-      <span className="text-[10px] font-bold tracking-[0.2em] text-white">EDAI · INSPECCIONES</span>
+      <span className="text-[10px] font-bold tracking-[0.2em] text-white">CIAGRO SRL · INSPECCIONES</span>
       <button onClick={() => supabase.auth.signOut()} className="text-xs text-slate-500 hover:text-white">Salir</button>
     </header>
     <div className="mx-auto max-w-[1500px] p-5 sm:p-8"><Inspections isAdmin={role === 'admin'} who={who || session.user.email || ''} /></div>

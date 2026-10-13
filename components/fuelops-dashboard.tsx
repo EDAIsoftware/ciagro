@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { LogOut, ArrowDownToLine, BarChart3, CalendarDays, ChevronRight, Download, Droplets, Fuel, Gauge, ListOrdered, Menu, Plus, Printer, Trash2, X, Zap } from 'lucide-react'
+import { LogOut, ArrowDownToLine, BarChart3, CalendarDays, ChevronRight, Download, Droplets, Fuel, Gauge, ListOrdered, Menu, Pencil, Plus, Printer, Trash2, X, Zap } from 'lucide-react'
 import { DB, EQUIPMENT, api, defaultMonth, balance, equipmentReport, fetchDB, fmtBs, fmtDate, fmtL, monthLabel, months, vehicleStats, weekOf, ym } from '@/lib/store'
 import { supabase } from '@/lib/supabase'
 
@@ -77,10 +77,10 @@ function exportCsv(db: DB, m: string, rep: ReturnType<typeof equipmentReport>) {
   a.click()
 }
 
-function Table({ heads, rows, onDelete }: { heads: string[]; rows: { id: string; cells: React.ReactNode[] }[]; onDelete?: (id: string) => void }) {
+function Table({ heads, rows, onDelete, onEdit }: { heads: string[]; rows: { id: string; cells: React.ReactNode[] }[]; onDelete?: (id: string) => void; onEdit?: (id: string) => void }) {
   if (!rows.length) return <p className="py-10 text-center text-sm text-slate-600">Sin movimientos en este mes.</p>
-  return <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-[10px] uppercase tracking-wider text-slate-600"><tr>{heads.map(h => <th key={h} className="whitespace-nowrap px-3 py-3 font-semibold">{h}</th>)}{onDelete && <th />}</tr></thead>
-    <tbody className="divide-y divide-white/[0.06]">{rows.map(r => <tr key={r.id} className="text-slate-300">{r.cells.map((c, i) => <td key={i} className="whitespace-nowrap px-3 py-3.5">{c}</td>)}{onDelete && <td className="no-print px-3"><button aria-label="Eliminar" onClick={() => confirm('¿Eliminar este registro?') && onDelete(r.id)} className="text-slate-600 hover:text-red-400"><Trash2 className="size-4" /></button></td>}</tr>)}</tbody></table></div>
+  return <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-[10px] uppercase tracking-wider text-slate-600"><tr>{heads.map(h => <th key={h} className="whitespace-nowrap px-3 py-3 font-semibold">{h}</th>)}{(onDelete || onEdit) && <th />}</tr></thead>
+    <tbody className="divide-y divide-white/[0.06]">{rows.map(r => <tr key={r.id} className="text-slate-300">{r.cells.map((c, i) => <td key={i} className="whitespace-nowrap px-3 py-3.5">{c}</td>)}{(onDelete || onEdit) && <td className="no-print whitespace-nowrap px-3">{onEdit && <button aria-label="Editar" onClick={() => onEdit(r.id)} className="mr-3 text-slate-600 hover:text-white"><Pencil className="size-4" /></button>}{onDelete && <button aria-label="Eliminar" onClick={() => confirm('¿Eliminar este registro?') && onDelete(r.id)} className="text-slate-600 hover:text-red-400"><Trash2 className="size-4" /></button>}</td>}</tr>)}</tbody></table></div>
 }
 
 function Login() {
@@ -102,6 +102,23 @@ function Login() {
   </form></main>
 }
 
+function EditTransfer({ t, onClose, onDone }: { t: DB['transfers'][number]; onClose: () => void; onDone: () => void }) {
+  const [dest, setDest] = useState(t.equipment)
+  const [person, setPerson] = useState(t.person)
+  const [notes, setNotes] = useState(t.notes)
+  const [err, setErr] = useState('')
+  const opts = EQUIPMENT.includes(t.equipment) ? EQUIPMENT : [...EQUIPMENT, t.equipment]
+  async function save() {
+    if (!person.trim()) return setErr('Indica quién retira el combustible.')
+    const { error } = await api.updateTransfer(t.id, { equipment: dest, person: person.trim(), notes: notes.trim() })
+    error ? setErr(error.message) : (onDone(), onClose())
+  }
+  return <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#05070c]/80 backdrop-blur-sm sm:items-center sm:p-6"><div className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#111a2a] sm:rounded-2xl">
+    <div className="flex items-center justify-between border-b border-white/[0.07] p-5"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: AMBER }}>Editar salida</p><h2 className="text-lg font-semibold text-white">{fmtL(t.liters)} · {fmtDate(t.datetime)}</h2></div><button onClick={onClose} aria-label="Cerrar" className="text-slate-500 hover:text-white"><X className="size-5" /></button></div>
+    <div className="flex flex-col gap-4 p-5"><Field label="Destino"><select value={dest} onChange={e => setDest(e.target.value)} className={inputCls}>{opts.map(o => <option key={o} className="bg-[#111a2a]">{o}</option>)}</select></Field><Field label="Responsable que retira"><input value={person} onChange={e => setPerson(e.target.value)} className={inputCls} /></Field><Field label="Motivo / notas"><input value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} /></Field>
+      {err && <p className="text-xs text-red-300">{err}</p>}<div className="flex justify-end gap-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: AMBER }}>Guardar</button></div></div></div></div>
+}
+
 export default function FuelOpsDashboard() {
   const [db, setDb] = useState<DB | null>(null)
   const [month, setMonth] = useState('')
@@ -110,6 +127,7 @@ export default function FuelOpsDashboard() {
   const [selId, setSelId] = useState<string | null>(null)
   const [tab, setTab] = useState<'loads' | 'transfers'>('loads')
   const [menu, setMenu] = useState(false)
+  const [editT, setEditT] = useState<DB['transfers'][number] | null>(null)
 
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [role, setRole] = useState<'admin' | 'operador'>('operador')
@@ -194,7 +212,7 @@ export default function FuelOpsDashboard() {
   const loadRows = (id?: string) => db.loads.filter(l => ym(l.date) === month && (!id || l.vehicleId === id)).sort((a, b) => b.date.localeCompare(a.date))
   const trRows = (id?: string) => db.transfers.filter(t => ym(t.datetime) === month && (!id || t.vehicleId === id)).sort((a, b) => b.datetime.localeCompare(a.datetime))
   const loadTable = (id?: string) => <Table heads={['Fecha', ...(id ? [] : ['Placa']), 'Factura', 'Litros', 'Importe', 'Odómetro', 'Conductor']} onDelete={delLoad} rows={loadRows(id).map(l => ({ id: l.id, cells: [fmtDate(l.date), ...(id ? [] : [plate(l.vehicleId)]), l.invoice, <span key="l" style={{ color: GREEN }}>{fmtL(l.liters)}</span>, fmtBs(l.cost), `${(l.odometer ?? 0).toLocaleString('es-BO')} km`, l.driver] }))} />
-  const trTable = (id?: string) => <Table heads={['Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'Motivo']} onDelete={delTransfer} rows={trRows(id).map(t => ({ id: t.id, cells: [fmtDate(t.datetime), ...(id ? [] : [plate(t.vehicleId)]), <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, t.equipment, t.person, t.notes || '—'] }))} />
+  const trTable = (id?: string) => <Table heads={['Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'Motivo']} onDelete={delTransfer} onEdit={isAdmin ? (tid: string) => setEditT(db.transfers.find(x => x.id === tid) ?? null) : undefined} rows={trRows(id).map(t => ({ id: t.id, cells: [fmtDate(t.datetime), ...(id ? [] : [plate(t.vehicleId)]), <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, t.equipment, t.person, t.notes || '—'] }))} />
 
   return <main className="print-root min-h-screen bg-[#0b0f17] text-slate-200">
     <aside className={`no-print fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/[0.07] bg-[#0d131f] p-5 transition-transform lg:translate-x-0 ${menu ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -252,6 +270,7 @@ export default function FuelOpsDashboard() {
     </div>
 
     {modal && <FormModal key={modal.kind + (modal.vehicleId ?? '')} modal={modal} db={db} onClose={() => setModal(null)} onSave={onSave} />}
+    {editT && <EditTransfer t={editT} onClose={() => setEditT(null)} onDone={refresh} />}
 
     {selected && (() => { const s = S(selected.id); const weeks = [0, 1, 2, 3].map(w => ({ buy: s.loads.filter(l => weekOf(+l.date.slice(8, 10)) === w).reduce((a, l) => a + l.liters, 0), out: s.transfers.filter(t => weekOf(+t.datetime.slice(8, 10)) === w).reduce((a, t) => a + t.liters, 0) })); const max = Math.max(1, ...weeks.flatMap(w => [w.buy, w.out]))
       return <div className="no-print fixed inset-0 z-50 flex justify-end bg-[#05070c]/70 backdrop-blur-sm" onClick={() => setSelId(null)}><div onClick={e => e.stopPropagation()} className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#101827] p-5 sm:p-8">

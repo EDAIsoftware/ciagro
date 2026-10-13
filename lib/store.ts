@@ -4,7 +4,7 @@ export type Load = { id: string; vehicleId: string; date: string; liters: number
 export type Transfer = { id: string; vehicleId: string; datetime: string; liters: number; equipment: string; person: string; notes: string }
 export type DB = { vehicles: Vehicle[]; loads: Load[]; transfers: Transfer[] }
 
-export const EQUIPMENT = ['Excavadora CAT 320', 'Retroexcavadora 01', 'Generador Principal', 'Maquinaria Agrícola', 'Taller']
+export const EQUIPMENT = ['Taller', 'Maquinaria', 'Insumos', 'Comercial']
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 export const uid = () => Math.random().toString(36).slice(2, 10)
@@ -34,6 +34,7 @@ export async function fetchDB(): Promise<DB> {
 
 export const api = {
   addVehicle: (v: Record<string, unknown>) => supabase.from('vehicles').insert(v),
+  updateTransfer: (id: string, t: Record<string, unknown>) => supabase.from('transfers').update(t).eq('id', id),
   updateVehicle: (id: string, v: Record<string, unknown>) => supabase.from('vehicles').update(v).eq('id', id),
   delVehicle: (id: string) => supabase.from('vehicles').delete().eq('id', id),
   addLoad: (l: Record<string, unknown>) => supabase.from('loads').insert(l),

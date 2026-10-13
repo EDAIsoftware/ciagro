@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import { LogOut, ArrowDownToLine, BarChart3, CalendarDays, ChevronRight, Download, Droplets, Fuel, Gauge, ListOrdered, Menu, Pencil, Plus, Printer, Trash2, X, Zap } from 'lucide-react'
 import { DB, EQUIPMENT, api, defaultMonth, balance, equipmentReport, fetchDB, fmtBs, fmtDate, fmtL, monthLabel, months, vehicleStats, weekOf, ym } from '@/lib/store'
 import { supabase } from '@/lib/supabase'
+import ProfileName from './profile-name'
 
 type Kind = 'load' | 'transfer' | 'vehicle'
 type Modal = { kind: Kind; vehicleId?: string } | null
@@ -218,7 +219,7 @@ export default function FuelOpsDashboard() {
     <aside className={`no-print fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/[0.07] bg-[#0d131f] p-5 transition-transform lg:translate-x-0 ${menu ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid size-9 place-items-center rounded-xl text-[#0b0f17]" style={{ background: GREEN }}><Fuel className="size-5" strokeWidth={2.5} /></div><div><div className="text-[15px] font-bold tracking-[0.18em] text-white">EDAI</div><div className="text-[9px] font-medium tracking-[0.22em] text-slate-500">FUELOPS</div></div></div><button onClick={() => setMenu(false)} className="text-slate-500 lg:hidden"><X className="size-5" /></button></div>
       <nav className="mt-12 flex flex-col gap-1">{nav.map(([k, label, Icon]) => <button key={k} onClick={() => { setView(k); setMenu(false) }} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${view === k ? 'bg-[#c6ff00]/10 font-medium text-[#c6ff00]' : 'text-slate-500 hover:bg-white/5 hover:text-slate-200'}`}><Icon className="size-[17px]" />{label}</button>)}<a href="/inspecciones" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><Pickup className="size-[17px]" />Inspecciones</a></nav>
-      <div className="mt-auto rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><p className="truncate text-xs font-medium text-white">{who || session?.user.email}</p><p className="mt-0.5 text-[10px] uppercase tracking-wider" style={{ color: isAdmin ? GREEN : CYAN }}>{isAdmin ? 'Administrador' : 'Operador'}</p><button onClick={() => supabase.auth.signOut()} className="mt-3 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><LogOut className="size-4" />Cerrar sesión</button></div>
+      <div className="mt-auto rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><div className="text-xs font-medium text-white"><ProfileName userId={session?.user.id ?? ''} name={who} fallback={session?.user.email ?? ''} onSaved={setWho} /></div><p className="mt-0.5 text-[10px] uppercase tracking-wider" style={{ color: isAdmin ? GREEN : CYAN }}>{isAdmin ? 'Administrador' : 'Operador'}</p><button onClick={() => supabase.auth.signOut()} className="mt-3 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><LogOut className="size-4" />Cerrar sesión</button></div>
     </aside>
 
     <div className="lg:pl-64">

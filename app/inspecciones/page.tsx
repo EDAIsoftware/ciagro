@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Inspections from './inspections'
+import ProfileName from '@/components/profile-name'
 
 export default function InspeccionesPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -28,7 +29,7 @@ export default function InspeccionesPage() {
     <header className="no-print flex h-[68px] items-center justify-between border-b border-white/[0.07] px-5 sm:px-8">
       <a href="/" className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft className="size-4" />Control de combustible</a>
       <span className="text-[10px] font-bold tracking-[0.2em] text-white">CIAGRO SRL · INSPECCIONES</span>
-      <button onClick={() => supabase.auth.signOut()} className="text-xs text-slate-500 hover:text-white">Salir</button>
+      <div className="flex min-w-0 items-center gap-4 text-xs text-slate-400"><ProfileName userId={session.user.id} name={who} fallback={session.user.email ?? ''} onSaved={setWho} /><button onClick={() => supabase.auth.signOut()} className="shrink-0 text-slate-500 hover:text-white">Salir</button></div>
     </header>
     <div className="mx-auto max-w-[1500px] p-5 sm:p-8"><Inspections isAdmin={role === 'admin'} who={who || session.user.email || ''} /></div>
   </main>

@@ -132,6 +132,9 @@ export default function FuelOpsDashboard() {
 
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [role, setRole] = useState<'admin' | 'operador'>('operador')
+  const [mods, setMods] = useState<string[] | null>(null)
+  const canRutas = !!mods?.includes('rutas')
+  const canPrep = !!mods && (mods.includes('tractores') || mods.includes('implementos'))
   const [who, setWho] = useState('')
   const [loadErr, setLoadErr] = useState('')
   const isAdmin = role === 'admin'
@@ -145,6 +148,7 @@ export default function FuelOpsDashboard() {
   useEffect(() => {
     if (!session) { setDb(null); setMonth(''); return }
     refresh()
+    supabase.rpc('my_modules').then(({ data }) => setMods((data ?? []) as string[]))
     supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single().then(({ data }) => { if (data) { setRole(data.role); setWho(data.full_name ?? '') } })
     const ch = supabase.channel('edai').on('postgres_changes', { event: '*', schema: 'public' }, () => refresh()).subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -153,6 +157,7 @@ export default function FuelOpsDashboard() {
   const stats = useMemo(() => (db ? Object.fromEntries(db.vehicles.map(v => [v.id, vehicleStats(db, v.id, month)])) : {}), [db, month])
   const rep = useMemo(() => (db ? equipmentReport(db, month) : []), [db, month])
   if (session === null) return <Login />
+  if (mods && !mods.includes('combustible')) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] p-6 text-center text-sm text-slate-400"><div>No tienes acceso al control de combustible.<br />{mods.length ? 'Entra a lo que tienes asignado:' : 'Pide al administrador que te asigne un módulo.'}<div className="mt-3 flex flex-col gap-2">{[['inspecciones', '/inspecciones', 'Inspecciones y taller'], ['rutas', '/rutas', 'Rutas de servicio'], ['tractores', '/preparacion', 'Preparación'], ['implementos', '/preparacion', 'Preparación']].filter(([m], i, a) => mods.includes(m) && a.findIndex(z => z[1] === a[i][1] && mods.includes(z[0])) === i).map(([, h, l]) => <a key={h} href={h} className="text-[#c6ff00] underline">{l}</a>)}{mods.length > 0 && <a href="/resumen" className="text-[#c6ff00] underline">Panel general</a>}</div><button onClick={() => supabase.auth.signOut()} className="mt-4 text-xs text-slate-500 underline">Cerrar sesión</button></div></main>
   if (loadErr) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] p-6 text-center text-sm text-red-300">No se pudo cargar la base de datos: {loadErr}</main>
   if (!db) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] text-sm text-slate-500">Cargando EDAI FuelOps…</main>
 
@@ -218,7 +223,7 @@ export default function FuelOpsDashboard() {
   return <main className="print-root min-h-screen bg-[#0b0f17] text-slate-200">
     <aside className={`no-print fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/[0.07] bg-[#0d131f] p-5 transition-transform lg:translate-x-0 ${menu ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid size-9 place-items-center rounded-xl text-[#0b0f17]" style={{ background: GREEN }}><Fuel className="size-5" strokeWidth={2.5} /></div><div><div className="text-[15px] font-bold tracking-[0.18em] text-white">EDAI</div><div className="text-[9px] font-medium tracking-[0.22em] text-slate-500">FUELOPS</div></div></div><button onClick={() => setMenu(false)} className="text-slate-500 lg:hidden"><X className="size-5" /></button></div>
-      <nav className="mt-12 flex flex-col gap-1">{nav.map(([k, label, Icon]) => <button key={k} onClick={() => { setView(k); setMenu(false) }} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${view === k ? 'bg-[#c6ff00]/10 font-medium text-[#c6ff00]' : 'text-slate-500 hover:bg-white/5 hover:text-slate-200'}`}><Icon className="size-[17px]" />{label}</button>)}<a href="/inspecciones" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><Pickup className="size-[17px]" />Inspecciones</a></nav>
+      <nav className="mt-12 flex flex-col gap-1">{nav.map(([k, label, Icon]) => <button key={k} onClick={() => { setView(k); setMenu(false) }} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${view === k ? 'bg-[#c6ff00]/10 font-medium text-[#c6ff00]' : 'text-slate-500 hover:bg-white/5 hover:text-slate-200'}`}><Icon className="size-[17px]" />{label}</button>)}{(!mods || mods.includes('inspecciones')) && <a href="/inspecciones" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><Pickup className="size-[17px]" />Inspecciones</a>}{canRutas && <a href="/rutas" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><ListOrdered className="size-[17px]" />Rutas de servicio</a>}{canPrep && <a href="/preparacion" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><Gauge className="size-[17px]" />Preparación</a>}<a href="/resumen" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><CalendarDays className="size-[17px]" />Panel general</a>{isAdmin && <a href="/usuarios" className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"><BarChart3 className="size-[17px]" />Usuarios y permisos</a>}</nav>
       <div className="mt-auto rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><div className="text-xs font-medium text-white"><ProfileName userId={session?.user.id ?? ''} name={who} fallback={session?.user.email ?? ''} onSaved={setWho} /></div><p className="mt-0.5 text-[10px] uppercase tracking-wider" style={{ color: isAdmin ? GREEN : CYAN }}>{isAdmin ? 'Administrador' : 'Operador'}</p><button onClick={() => supabase.auth.signOut()} className="mt-3 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><LogOut className="size-4" />Cerrar sesión</button></div>
     </aside>
 

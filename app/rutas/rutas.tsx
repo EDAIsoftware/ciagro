@@ -14,7 +14,6 @@ type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | n
 const GREEN = '#c6ff00', AMBER = '#ff8a00', RED = '#ef4444', VIOLET = '#a78bfa'
 const PRI = ['', '#ff0000', '#ffd400', '#34a853']
 const PRIL = ['', 'Alta', 'Normal', 'Baja']
-const FIRMAS = [['GUIDO MORENO', 'SUBGERENTE SERVICIO TEC.'], ['NICOLAS FAREL', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
 const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#00d2ff]'
 const btn = 'h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5'
 const DN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -85,11 +84,24 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
       <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div></Lab></div>
       <Lab t="Fecha de salida"><input type="date" className={inp} value={d.depart_date} onChange={x => setD({ ...d, depart_date: x.target.value })} /></Lab><Lab t="Hora de salida"><input type="time" className={inp} value={d.depart_time} onChange={x => setD({ ...d, depart_time: x.target.value })} /></Lab>
       <Lab t="Retorno estimado"><input type="date" className={inp} value={d.return_date} onChange={x => setD({ ...d, return_date: x.target.value })} /></Lab><Lab t={`Días laborales${auto != null ? ` (calculado: ${auto})` : ''}`}><input type="number" className={inp} value={d.days} placeholder={auto != null ? String(auto) : ''} onChange={x => setD({ ...d, days: x.target.value })} /></Lab>
-      <Lab t="Efectivo asignado (Bs)"><input type="number" inputMode="decimal" className={inp} value={d.cash} onChange={x => setD({ ...d, cash: x.target.value })} /></Lab><Lab t="Observaciones"><input className={inp} value={d.notes} onChange={x => setD({ ...d, notes: x.target.value })} /></Lab>
+      <Lab t="Efectivo asignado (Bs)"><input type="number" inputMode="decimal" className={inp} value={d.cash} onChange={x => setD({ ...d, cash: x.target.value })} /></Lab><Lab t="Observaciones"><TextIn value={d.notes} onChange={v => setD({ ...d, notes: v })} /></Lab>
       {iwInfo(d.depart_date)}</div>
     <div className="mt-4"><Warn list={ws} /></div>
     {e && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{e}</p>}
     <button onClick={save} className="mt-5 h-12 w-full rounded-xl text-sm font-bold text-[#0b0f17]" style={{ background: GREEN }}>{r ? 'Guardar cambios' : 'Crear ruta'}</button>
+  </div>
+}
+
+const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+function TextIn({ value, onChange, options, onPick, onCommit, placeholder, area, mode }: { value: string; onChange: (v: string) => void; options?: string[]; onPick?: (v: string) => void; onCommit?: (v: string) => void; placeholder?: string; area?: boolean; mode?: 'text' | 'tel' | 'numeric' }) {
+  const [open, setOpen] = useState(false)
+  const v = norm(value.trim())
+  const list = (options ?? []).filter(o => o && norm(o) !== v && (!v || norm(o).includes(v))).slice(0, 6)
+  const common = { value, placeholder, inputMode: mode, style: { paddingRight: 40 }, onFocus: () => setOpen(true), onBlur: () => { setTimeout(() => setOpen(false), 150); onCommit?.(value) } }
+  return <div className="relative">
+    {area ? <textarea {...common} className={inp + ' h-24 py-3'} onChange={e => onChange(e.target.value)} /> : <input {...common} className={inp} onChange={e => onChange(e.target.value)} />}
+    {value && <button type="button" aria-label="Borrar todo el texto" onMouseDown={e => e.preventDefault()} onClick={() => onChange('')} className="absolute right-2 top-2.5 grid size-7 place-items-center rounded-full bg-white/10 text-base leading-none text-slate-200 hover:bg-white/20">×</button>}
+    {open && list.length > 0 && <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-white/10 bg-[#111a2a] shadow-xl">{list.map(o => <button type="button" key={o} onMouseDown={e => e.preventDefault()} onClick={() => { onChange(o); onPick?.(o); setOpen(false) }} className="block w-full px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-white/5">{o}</button>)}</div>}
   </div>
 }
 
@@ -105,10 +117,10 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
     onDone(); onClose()
   }
   return <Modal title={t ? 'Editar técnico' : 'Agregar técnico'} onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">
-    <Lab t="Nombre"><input className={inp} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></Lab>
+    <Lab t="Nombre"><TextIn value={f.name} onChange={v => setF({ ...f, name: v })} /></Lab>
     <Lab t="Área"><input className={inp} list="areas-rt" value={f.area} onChange={e => setF({ ...f, area: e.target.value })} /></Lab>
     <datalist id="areas-rt">{['Tractores', 'Cosechadoras', 'Maq. pesadas', 'Electricidad', 'Equipos livianos', 'Otros', 'Ayudante'].map(a => <option key={a} value={a} />)}</datalist>
-    <Lab t="Teléfono (opcional)"><input className={inp} inputMode="tel" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></Lab>
+    <Lab t="Teléfono (opcional)"><TextIn mode="tel" value={f.phone} onChange={v => setF({ ...f, phone: v })} /></Lab>
     <label className="flex items-center gap-2 pt-6 text-sm text-slate-300"><input type="checkbox" className="size-5" checked={f.active} onChange={e => setF({ ...f, active: e.target.checked })} />Activo</label>
     <Lab t="Ausente desde"><input type="date" className={inp} value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></Lab><Lab t="Hasta"><input type="date" className={inp} value={f.to} onChange={e => setF({ ...f, to: e.target.value })} /></Lab>
     <div className="sm:col-span-2"><Lab t="Motivo de la ausencia"><select className={inp} value={f.why} onChange={e => setF({ ...f, why: e.target.value })}><option className="bg-[#111a2a]">Vacación</option><option className="bg-[#111a2a]">No disponible</option></select></Lab></div>
@@ -116,11 +128,22 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
     <div className="flex justify-end gap-2 sm:col-span-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></Modal>
 }
 
-function ReqForm({ q, route, clients, who, onClose, onDone }: { q: Req | null; route: Route | null; clients: string[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
+type SK = 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet' | 'job'
+function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
   const assigned = !!(route || q?.route_id)
   const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha' })
   const [err, setErr] = useState('')
-  const t = (k: 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet') => ({ className: inp, value: f[k], onChange: (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value }) })
+  const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x && !!x.trim())))
+  const set = (k: SK, v: string) => setF(p => ({ ...p, [k]: v }))
+  const mine = history.filter(h => f.client.trim() && norm(h.client) === norm(f.client))
+  const combos = uniq(mine.map(h => [h.brand, h.machine, h.model].join('|'))).map(c => c.split('|')).filter(c => c.some(Boolean))
+  // Al elegir un cliente conocido se completan zona, contacto, punto de encuentro (si tiene uno solo) y máquina (si tiene una sola)
+  function fill(name: string) {
+    if (q) return
+    const rs = history.filter(h => norm(h.client) === norm(name)); if (!rs.length) return
+    const pts = uniq(rs.map(r => r.meeting_point)), cs = uniq(rs.map(r => [r.brand, r.machine, r.model].join('|'))), l = rs[0]
+    setF(p => ({ ...p, client: l.client, zone: p.zone || l.zone, contact: p.contact || l.contact, meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(cs.length === 1 && !p.machine && !p.model && !p.brand ? { brand: l.brand, machine: l.machine, model: l.model } : {}) }))
+  }
   async function save() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
     if (!f.job.trim()) return setErr('Escribe el trabajo solicitado.')
@@ -132,14 +155,16 @@ function ReqForm({ q, route, clients, who, onClose, onDone }: { q: Req | null; r
   }
   const sel = (k: 'warranty' | 'credit') => <select className={inp} value={f[k] ? 'si' : 'no'} onChange={e => setF({ ...f, [k]: e.target.value === 'si' })}><option value="no" className="bg-[#111a2a]">No</option><option value="si" className="bg-[#111a2a]">Sí</option></select>
   return <Modal title={q ? 'Editar solicitud' : 'Nueva solicitud'} sub={route ? `Se agrega a la ruta ${route.number}` : undefined} onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">
-    <div className="sm:col-span-2"><Lab t="Cliente"><input {...t('client')} list="clientes-rt" /></Lab></div><datalist id="clientes-rt">{clients.map(c => <option key={c} value={c} />)}</datalist>
-    <Lab t="Marca"><input {...t('brand')} list="marcas-rt" placeholder="New Holland" /></Lab><datalist id="marcas-rt">{['New Holland', 'Develon', 'Case', 'John Deere'].map(c => <option key={c} value={c} />)}</datalist>
-    <Lab t="Máquina"><input {...t('machine')} list="maq-rt" placeholder="Tractor" /></Lab><datalist id="maq-rt">{['Tractor', 'Excavadora', 'Cosechadora', 'Pulverizadora', 'Cargador'].map(c => <option key={c} value={c} />)}</datalist>
-    <Lab t="Modelo"><input {...t('model')} /></Lab><Lab t="Fecha de llamada"><input type="date" className={inp} value={f.call} onChange={e => setF({ ...f, call: e.target.value })} /></Lab>
-    <Lab t="Zona"><input {...t('zone')} list="zonas-rt" /></Lab><datalist id="zonas-rt">{['Norte', 'Este', 'Sur', 'Oeste'].map(c => <option key={c} value={c} />)}</datalist>
-    <Lab t="Contacto (teléfono y nombre)"><input {...t('contact')} /></Lab>
-    <div className="sm:col-span-2"><Lab t="Punto de encuentro"><input {...t('meet')} /></Lab></div>
-    <div className="sm:col-span-2"><Lab t="Trabajo solicitado"><textarea className={inp + ' h-24 py-3'} value={f.job} onChange={e => setF({ ...f, job: e.target.value })} /></Lab></div>
+    <div className="sm:col-span-2"><Lab t="Cliente"><TextIn value={f.client} onChange={v => set('client', v)} options={uniq(history.map(h => h.client))} onPick={fill} onCommit={fill} placeholder="Escribe una letra y elige" /></Lab></div>
+    {combos.length > 1 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente</span>{combos.map((c, i) => <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: c[0], machine: c[1], model: c[2] }))} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:border-[#c6ff00]">{c.filter(Boolean).join(' · ')}</button>)}</div>}
+    <Lab t="Marca"><TextIn value={f.brand} onChange={v => set('brand', v)} options={uniq([...mine.map(h => h.brand), ...history.map(h => h.brand), 'New Holland', 'Develon', 'Case', 'John Deere'])} /></Lab>
+    <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.map(h => h.machine), ...history.map(h => h.machine), 'Tractor', 'Excavadora', 'Cosechadora', 'Pulverizadora', 'Cargador'])} /></Lab>
+    <Lab t="Modelo"><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.map(h => h.model), ...history.map(h => h.model)])} /></Lab>
+    <Lab t="Fecha de llamada"><input type="date" className={inp} value={f.call} onChange={e => setF({ ...f, call: e.target.value })} /></Lab>
+    <Lab t="Zona"><TextIn value={f.zone} onChange={v => set('zone', v)} options={uniq([...mine.map(h => h.zone), ...history.map(h => h.zone), 'Norte', 'Este', 'Sur', 'Oeste'])} /></Lab>
+    <Lab t="Contacto (teléfono y nombre)"><TextIn value={f.contact} onChange={v => set('contact', v)} options={uniq([...mine.map(h => h.contact), ...history.map(h => h.contact)])} /></Lab>
+    <div className="sm:col-span-2"><Lab t="Punto de encuentro / dirección"><TextIn value={f.meet} onChange={v => set('meet', v)} options={uniq([...mine.map(h => h.meeting_point), ...history.map(h => h.meeting_point)])} /></Lab></div>
+    <div className="sm:col-span-2"><Lab t="Trabajo solicitado"><TextIn area value={f.job} onChange={v => set('job', v)} /></Lab></div>
     <Lab t="Garantía">{sel('warranty')}</Lab><Lab t="Crédito">{sel('credit')}</Lab>
     <div className="sm:col-span-2"><Lab t="Prioridad"><select className={inp} value={f.pri} onChange={e => setF({ ...f, pri: e.target.value })}>{[1, 2, 3].map(n => <option key={n} value={n} className="bg-[#111a2a]">{n} · {PRIL[n]}</option>)}</select></Lab></div>
     {assigned && <><Lab t="Fecha de visita"><input type="date" className={inp} value={f.visit} onChange={e => setF({ ...f, visit: e.target.value })} /></Lab><label className="flex items-center gap-2 pt-6 text-sm text-slate-300"><input type="checkbox" className="size-5" checked={f.done} onChange={e => setF({ ...f, done: e.target.checked })} />Visita hecha</label>
@@ -160,7 +185,6 @@ export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs:
       <p className="mb-1 mt-3 text-[10px]">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
       <table className="w-full min-w-[900px] border-collapse"><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
         <tbody>{Array.from({ length: Math.max(6, rows.length) }, (_, i) => { const v = rows[i]; return <tr key={i}><td className={cell}>{i + 1}</td>{v ? <><td className={cell}>{v.client}</td><td className={cell}>{v.brand}</td><td className={cell}>{v.machine}</td><td className={cell}>{v.model}</td><td className={cell}>{fmtD(v.call_date)}</td><td className={cell}>{v.zone}</td><td className={cell}>{v.contact}</td><td className={cell}>{v.meeting_point}</td><td className={cell + ' whitespace-pre-wrap'}>{v.job}</td><td className={cell}>{v.warranty ? 'SI' : 'NO'}</td><td className={cell}>{v.credit ? 'SI' : 'NO'}</td><td className={cell + ' keep-bg text-center font-bold'} style={{ '--bg': PRI[v.priority], background: PRI[v.priority] } as React.CSSProperties}>{v.priority}</td><td className={cell}>{v.amount != null ? v.amount.toLocaleString('es-BO') : '-'}</td><td className={cell}>{v.paid_date ? fmtD(v.paid_date) : '-'}</td><td className={cell}>{fmtD(v.visit_date)}</td></> : Array.from({ length: 15 }, (_, k) => <td key={k} className={cell}>&nbsp;</td>)}</tr> })}</tbody></table>
-      <div className="mt-12 grid grid-cols-3 gap-10 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1"><b>{n}</b><br /><span className="text-[10px]">{c}</span></div>)}</div>
       {r.notes && <p className="mt-3"><b>Observaciones:</b> {r.notes}</p>}
     </div></div>
 }
@@ -185,7 +209,6 @@ function weekXml(week: number, year: number, routes: Route[], techs: Tech[], veh
       rw([cl('Vehículo (placa)', 'b', 1), cl(v ? `${v.plate} · ${v.name}` : '', 's', 2), cl('Efectivo (Bs)', 'b'), cl(`${r.cash} · ${r.work_days ?? '-'} días laborales`, 's', 2)]),
       rw([cl('Prioridad: 1 = Alta / 2 = Normal / 3 = Baja', 't')]), rw(head.map(h => cl(h, 'h')))]
     for (let i = 0; i < Math.max(6, vs.length); i++) { const q = vs[i]; rows.push(rw(q ? [cl(i + 1), cl(q.client), cl(q.brand), cl(q.machine), cl(q.model), cl(fd(q.call_date)), cl(q.zone), cl(q.contact), cl(q.meeting_point), cl(q.job), cl(q.warranty ? 'SI' : 'NO'), cl(q.credit ? 'SI' : 'NO'), cl(q.priority, 'p' + q.priority), cl(q.amount ?? '-'), cl(q.paid_date ? fd(q.paid_date) : '-'), cl(fd(q.visit_date))] : [cl(i + 1), ...Array.from({ length: 15 }, () => cl(''))])) }
-    rows.push(rw([]), rw([cl(''), ...FIRMAS.flatMap(([n]) => [cl(n, 'f', 3), cl('')])]), rw([cl(''), ...FIRMAS.flatMap(([, c]) => [cl(c, 'f', 3), cl('')])]))
     return sheet(String(r.number), [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
   }
   return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${rrhh}${car}${routes.map(route).join('')}</Workbook>`
@@ -307,8 +330,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     await log(r.id, `${q.status === 'hecha' ? 'Desmarcó' : 'Marcó como hecha'} la visita: ${q.client}`); load()
   }
 
-  const clients: string[] = Array.from(new Set<string>(reqs.map(q => q.client))).sort()
-  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} clients={clients} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
+  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
 
   const ctx: Ctx = { techs, vehs, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
   if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />

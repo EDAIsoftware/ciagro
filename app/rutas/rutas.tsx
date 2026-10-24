@@ -18,6 +18,7 @@ const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 
 const btn = 'h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5'
 const DN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
+const FIRMAS = [['GUIDO MORENO', 'SUBGERENTE SERVICIO TEC.'], ['NICOLAS FAREL', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const today = () => ymd(new Date())
 const fmtD = (s?: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')
@@ -92,6 +93,13 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
   </div>
 }
 
+// Solo se trabaja con estas marcas. Modelos y máquinas tomados de la planilla de rutas; lo nuevo que se registre se sugiere solo.
+const MARCAS = ['New Holland', 'Develon', 'Doosan', 'Bobcat', 'Pirelli']
+const CATALOGO: Record<string, { maq: string[]; mod: string[] }> = {
+  'New Holland': { maq: ['Tractor'], mod: ['6630', '8030', 'T5070', 'T6.130', 'T7.150', 'T7.180', 'T7.200', 'TM150'] },
+  Develon: { maq: ['Excavadora'], mod: ['DX225LCA-7M', 'DX225LCA'] },
+}
+const MAQ_GENERICAS = ['Tractor', 'Excavadora', 'Cosechadora', 'Cargador', 'Pulverizadora']
 const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 function TextIn({ value, onChange, options, onPick, onCommit, placeholder, area, mode }: { value: string; onChange: (v: string) => void; options?: string[]; onPick?: (v: string) => void; onCommit?: (v: string) => void; placeholder?: string; area?: boolean; mode?: 'text' | 'tel' | 'numeric' }) {
   const [open, setOpen] = useState(false)
@@ -135,6 +143,11 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
   const [err, setErr] = useState('')
   const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x && !!x.trim())))
   const set = (k: SK, v: string) => setF(p => ({ ...p, [k]: v }))
+  const canon = (b: string) => MARCAS.find(m => norm(m) === norm(b)) ?? b
+  const cat = CATALOGO[canon(f.brand)]
+  const sameBrand = (h: Req) => !f.brand || norm(h.brand) === norm(f.brand)
+  const marcas = f.brand && !MARCAS.some(m => norm(m) === norm(f.brand)) ? [...MARCAS, f.brand] : MARCAS
+  function pickBrand(v: string) { setF(p => ({ ...p, brand: v, model: '', machine: CATALOGO[v]?.maq.length === 1 ? CATALOGO[v].maq[0] : p.machine })) }
   const mine = history.filter(h => f.client.trim() && norm(h.client) === norm(f.client))
   const combos = uniq(mine.map(h => [h.brand, h.machine, h.model].join('|'))).map(c => c.split('|')).filter(c => c.some(Boolean))
   // Al elegir un cliente conocido se completan zona, contacto, punto de encuentro (si tiene uno solo) y máquina (si tiene una sola)
@@ -142,7 +155,7 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
     if (q) return
     const rs = history.filter(h => norm(h.client) === norm(name)); if (!rs.length) return
     const pts = uniq(rs.map(r => r.meeting_point)), cs = uniq(rs.map(r => [r.brand, r.machine, r.model].join('|'))), l = rs[0]
-    setF(p => ({ ...p, client: l.client, zone: p.zone || l.zone, contact: p.contact || l.contact, meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(cs.length === 1 && !p.machine && !p.model && !p.brand ? { brand: l.brand, machine: l.machine, model: l.model } : {}) }))
+    setF(p => ({ ...p, client: l.client, zone: p.zone || l.zone, contact: p.contact || l.contact, meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(cs.length === 1 && !p.machine && !p.model && !p.brand ? { brand: canon(l.brand), machine: l.machine, model: l.model } : {}) }))
   }
   async function save() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
@@ -156,10 +169,10 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
   const sel = (k: 'warranty' | 'credit') => <select className={inp} value={f[k] ? 'si' : 'no'} onChange={e => setF({ ...f, [k]: e.target.value === 'si' })}><option value="no" className="bg-[#111a2a]">No</option><option value="si" className="bg-[#111a2a]">Sí</option></select>
   return <Modal title={q ? 'Editar solicitud' : 'Nueva solicitud'} sub={route ? `Se agrega a la ruta ${route.number}` : undefined} onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">
     <div className="sm:col-span-2"><Lab t="Cliente"><TextIn value={f.client} onChange={v => set('client', v)} options={uniq(history.map(h => h.client))} onPick={fill} onCommit={fill} placeholder="Escribe una letra y elige" /></Lab></div>
-    {combos.length > 1 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente</span>{combos.map((c, i) => <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: c[0], machine: c[1], model: c[2] }))} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:border-[#c6ff00]">{c.filter(Boolean).join(' · ')}</button>)}</div>}
-    <Lab t="Marca"><TextIn value={f.brand} onChange={v => set('brand', v)} options={uniq([...mine.map(h => h.brand), ...history.map(h => h.brand), 'New Holland', 'Develon', 'Case', 'John Deere'])} /></Lab>
-    <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.map(h => h.machine), ...history.map(h => h.machine), 'Tractor', 'Excavadora', 'Cosechadora', 'Pulverizadora', 'Cargador'])} /></Lab>
-    <Lab t="Modelo"><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.map(h => h.model), ...history.map(h => h.model)])} /></Lab>
+    {combos.length > 1 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente</span>{combos.map((c, i) => <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: canon(c[0]), machine: c[1], model: c[2] }))} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:border-[#c6ff00]">{c.filter(Boolean).join(' · ')}</button>)}</div>}
+    <Lab t="Marca"><select className={inp} value={f.brand} onChange={e => pickBrand(e.target.value)}><option value="" className="bg-[#111a2a]">Elegir marca…</option>{marcas.map(m => <option key={m} value={m} className="bg-[#111a2a]">{m}</option>)}</select></Lab>
+    <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.filter(sameBrand).map(h => h.machine), ...(cat ? cat.maq : MAQ_GENERICAS), ...history.filter(sameBrand).map(h => h.machine)])} /></Lab>
+    <Lab t={f.brand ? `Modelo (${f.brand})` : 'Modelo'}><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.filter(sameBrand).map(h => h.model), ...history.filter(sameBrand).map(h => h.model), ...(cat ? cat.mod : [])])} /></Lab>
     <Lab t="Fecha de llamada"><input type="date" className={inp} value={f.call} onChange={e => setF({ ...f, call: e.target.value })} /></Lab>
     <Lab t="Zona"><TextIn value={f.zone} onChange={v => set('zone', v)} options={uniq([...mine.map(h => h.zone), ...history.map(h => h.zone), 'Norte', 'Este', 'Sur', 'Oeste'])} /></Lab>
     <Lab t="Contacto (teléfono y nombre)"><TextIn value={f.contact} onChange={v => set('contact', v)} options={uniq([...mine.map(h => h.contact), ...history.map(h => h.contact)])} /></Lab>
@@ -176,16 +189,18 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
 export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
   const nm = (id?: string | null) => techs.find(t => t.id === id)?.name ?? '—'
   const cell = 'border border-gray-400 px-1 py-0.5 align-top'
+  useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SRL`; return () => { document.title = t } }, [r.number])
   const rows = [...visits].sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
-  return <div><style>{'@media print{@page{size:landscape;margin:10mm}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
+  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.rs-wrap{overflow:visible!important;padding:10mm!important;border-radius:0!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:8.5px!important}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
-    <div className="overflow-x-auto rounded-lg bg-white p-5 text-[11px] text-black">
+    <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-5 text-[11px] text-black">
       <div className="mb-3 flex items-end justify-between border-b-2 border-black pb-2"><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p><h1 className="text-base font-bold uppercase">Ruta de trabajo</h1><p className="text-sm">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
       <div className="grid gap-x-6 sm:grid-cols-2">{[['Técnico asignado', nm(r.tech_id)], ['Técnico de apoyo', r.support.length ? r.support.map(nm).join(' - ') : '-'], ['Vehículo (placa)', veh ? `${veh.plate} · ${veh.name}` : '—'], ['Salida (fecha / hora)', `${fmtD(r.depart_date)} ${r.depart_time ? r.depart_time.slice(0, 5) : ''}`], ['Retorno estimado', fmtD(r.return_date)], ['Efectivo asignado (Bs)', `${r.cash.toLocaleString('es-BO')} · ${r.work_days ?? '-'} días laborales`]].map(([a, b]) => <div key={a} className="flex gap-2 border-b border-gray-300 py-1"><span className="w-40 shrink-0 font-semibold">{a}</span><span>{b}</span></div>)}</div>
       <p className="mb-1 mt-3 text-[10px]">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
-      <table className="w-full min-w-[900px] border-collapse"><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
+      <table className="rs-table w-full min-w-[900px] border-collapse"><colgroup>{[3, 9, 6, 6, 6, 6, 5, 8, 10, 14, 4, 4, 3.5, 5, 5, 5.5].map((w, i) => <col key={i} style={{ width: w + '%' }} />)}</colgroup><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
         <tbody>{Array.from({ length: Math.max(6, rows.length) }, (_, i) => { const v = rows[i]; return <tr key={i}><td className={cell}>{i + 1}</td>{v ? <><td className={cell}>{v.client}</td><td className={cell}>{v.brand}</td><td className={cell}>{v.machine}</td><td className={cell}>{v.model}</td><td className={cell}>{fmtD(v.call_date)}</td><td className={cell}>{v.zone}</td><td className={cell}>{v.contact}</td><td className={cell}>{v.meeting_point}</td><td className={cell + ' whitespace-pre-wrap'}>{v.job}</td><td className={cell}>{v.warranty ? 'SI' : 'NO'}</td><td className={cell}>{v.credit ? 'SI' : 'NO'}</td><td className={cell + ' keep-bg text-center font-bold'} style={{ '--bg': PRI[v.priority], background: PRI[v.priority] } as React.CSSProperties}>{v.priority}</td><td className={cell}>{v.amount != null ? v.amount.toLocaleString('es-BO') : '-'}</td><td className={cell}>{v.paid_date ? fmtD(v.paid_date) : '-'}</td><td className={cell}>{fmtD(v.visit_date)}</td></> : Array.from({ length: 15 }, (_, k) => <td key={k} className={cell}>&nbsp;</td>)}</tr> })}</tbody></table>
       {r.notes && <p className="mt-3"><b>Observaciones:</b> {r.notes}</p>}
+      <div className="mt-12 grid grid-cols-3 gap-10 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1"><b>{n}</b><br /><span className="text-[10px]">{c}</span></div>)}</div>
     </div></div>
 }
 
@@ -209,6 +224,7 @@ function weekXml(week: number, year: number, routes: Route[], techs: Tech[], veh
       rw([cl('Vehículo (placa)', 'b', 1), cl(v ? `${v.plate} · ${v.name}` : '', 's', 2), cl('Efectivo (Bs)', 'b'), cl(`${r.cash} · ${r.work_days ?? '-'} días laborales`, 's', 2)]),
       rw([cl('Prioridad: 1 = Alta / 2 = Normal / 3 = Baja', 't')]), rw(head.map(h => cl(h, 'h')))]
     for (let i = 0; i < Math.max(6, vs.length); i++) { const q = vs[i]; rows.push(rw(q ? [cl(i + 1), cl(q.client), cl(q.brand), cl(q.machine), cl(q.model), cl(fd(q.call_date)), cl(q.zone), cl(q.contact), cl(q.meeting_point), cl(q.job), cl(q.warranty ? 'SI' : 'NO'), cl(q.credit ? 'SI' : 'NO'), cl(q.priority, 'p' + q.priority), cl(q.amount ?? '-'), cl(q.paid_date ? fd(q.paid_date) : '-'), cl(fd(q.visit_date))] : [cl(i + 1), ...Array.from({ length: 15 }, () => cl(''))])) }
+    rows.push(rw([]), rw([cl(''), ...FIRMAS.flatMap(([n]) => [cl(n, 'f', 3), cl('')])]), rw([cl(''), ...FIRMAS.flatMap(([, c]) => [cl(c, 'f', 3), cl('')])]))
     return sheet(String(r.number), [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
   }
   return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${rrhh}${car}${routes.map(route).join('')}</Workbook>`
@@ -371,7 +387,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const tabBtn = (k: typeof tab, l: string) => <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>
   return <div className="no-print">
     <div className="mb-6 flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c6ff00]">Servicio técnico</p><h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Rutas de servicio</h2></div>
-      <button onClick={() => { setRid(null); setScr('rform') }} className="flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Nueva ruta</button></div>
+      <div className="flex items-center gap-4">{isAdmin && <a href="/rutas/impresion" className="text-xs text-slate-500 underline hover:text-white">Estación de impresión</a>}<button onClick={() => { setRid(null); setScr('rform') }} className="flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Nueva ruta</button></div></div>
     {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste rutas.sql en Supabase?</p>}
     <div className="mb-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">{tabBtn('semana', 'Semana')}{tabBtn('rutas', 'Rutas')}{tabBtn('solicitudes', `Solicitudes (${reqs.filter(q => q.status === 'pendiente').length})`)}{tabBtn('tecnicos', 'Técnicos')}</div>
 

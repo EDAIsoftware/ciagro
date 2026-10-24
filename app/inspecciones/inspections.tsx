@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Camera, ClipboardCheck, FileText, Pencil, Plus, Printer, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-type V = { id: string; name: string; plate: string; driver: string; odometer: number; area: string; year: string; chassis: string; km_next: number | null; km_interval: number | null }
+type V = { id: string; name: string; plate: string; driver: string; odometer: number; area: string; year: string; chassis: string; km_next: number | null; km_interval: number | null; insp_freq?: 'quincenal' | 'mensual' | 'manual' }
 type St = 'B' | 'R' | 'M' | 'N'
 type Item = { s: St; note?: string; photo?: string }
 type Kind = 'inspeccion' | 'recepcion' | 'taller'
@@ -217,12 +217,12 @@ function Matrix({ vs, ins, onBack }: { vs: V[]; ins: Insp[]; onBack: () => void 
 }
 
 function VehForm({ v, onClose, onDone }: { v: V | null; onClose: () => void; onDone: () => void }) {
-  const [f, setF] = useState({ name: v?.name ?? '', plate: v?.plate ?? '', year: v?.year ?? '', chassis: v?.chassis ?? '', area: v?.area ?? '', driver: v?.driver ?? '', odometer: String(v?.odometer ?? ''), km_next: v?.km_next != null ? String(v.km_next) : '', km_interval: String(v?.km_interval ?? 8000) })
+  const [f, setF] = useState({ name: v?.name ?? '', plate: v?.plate ?? '', year: v?.year ?? '', chassis: v?.chassis ?? '', area: v?.area ?? '', driver: v?.driver ?? '', odometer: String(v?.odometer ?? ''), km_next: v?.km_next != null ? String(v.km_next) : '', km_interval: String(v?.km_interval ?? 8000), freq: (v?.insp_freq ?? 'quincenal') as 'quincenal' | 'mensual' | 'manual' })
   const [err, setErr] = useState('')
   const t = (k: keyof typeof f, type = 'text') => ({ type, value: f[k], className: inp, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value }) })
   async function save() {
     if (!f.name.trim() || !f.plate.trim()) return setErr('Marca y placa son obligatorias.')
-    const body = { name: f.name.trim(), plate: f.plate.trim().toUpperCase(), year: f.year.trim(), chassis: f.chassis.trim(), area: f.area.trim(), driver: f.driver.trim() || 'Sin asignar', odometer: +f.odometer || 0, km_next: f.km_next ? +f.km_next : null, km_interval: +f.km_interval || 8000 }
+    const body = { name: f.name.trim(), plate: f.plate.trim().toUpperCase(), year: f.year.trim(), chassis: f.chassis.trim(), area: f.area.trim(), driver: f.driver.trim() || 'Sin asignar', odometer: +f.odometer || 0, km_next: f.km_next ? +f.km_next : null, km_interval: +f.km_interval || 8000, insp_freq: f.freq }
     const { error } = v ? await supabase.from('insp_vehicles').update(body).eq('id', v.id) : await supabase.from('insp_vehicles').insert(body)
     if (error) return setErr(error.code === '23505' ? 'Ya existe un vehículo con esa placa.' : error.message)
     onDone(); onClose()
@@ -236,7 +236,7 @@ function VehForm({ v, onClose, onDone }: { v: V | null; onClose: () => void; onD
     <div className="flex items-center justify-between border-b border-white/[0.07] p-5"><h2 className="text-lg font-semibold text-white">{v ? 'Editar vehículo' : 'Agregar vehículo'}</h2><button onClick={onClose} aria-label="Cerrar" className="text-slate-500 hover:text-white"><X className="size-5" /></button></div>
     <div className="grid gap-4 p-5 sm:grid-cols-2"><Lab t="Marca / modelo"><input {...t('name')} placeholder="Mitsubishi Triton" /></Lab><Lab t="Placa"><input {...t('plate')} placeholder="0000-ABC" /></Lab><Lab t="Año (modelo)"><input {...t('year')} placeholder="2019" /></Lab><Lab t="Chasis"><input {...t('chassis')} /></Lab>
       <Lab t="Área"><input {...t('area')} list="areas" placeholder="Maquinaria" /></Lab><datalist id="areas"><option value="Maquinaria" /><option value="Insumos" /><option value="Comercio" /></datalist><Lab t="Dueño / conductor"><input {...t('driver')} /></Lab>
-      <Lab t="Kilometraje actual"><input {...t('odometer', 'number')} /></Lab><Lab t="Km del próximo mantenimiento"><input {...t('km_next', 'number')} /></Lab><Lab t="Cada cuántos km (mantenimiento)"><input {...t('km_interval', 'number')} /></Lab>
+      <Lab t="Kilometraje actual"><input {...t('odometer', 'number')} /></Lab><Lab t="Km del próximo mantenimiento"><input {...t('km_next', 'number')} /></Lab><Lab t="Cada cuántos km (mantenimiento)"><input {...t('km_interval', 'number')} /></Lab><Lab t="Frecuencia de inspección"><select className={inp} value={f.freq} onChange={e => setF({ ...f, freq: e.target.value as typeof f.freq })}><option value="quincenal" className="bg-[#111a2a]">Cada 15 días</option><option value="mensual" className="bg-[#111a2a]">Cada mes</option><option value="manual" className="bg-[#111a2a]">Sin recordatorio (solo cuando se pida)</option></select></Lab>
       {err && <p className="text-xs text-red-300 sm:col-span-2">{err}</p>}
       <div className="flex items-center justify-between gap-2 sm:col-span-2">{v ? <button onClick={del} className="text-xs text-red-300 hover:underline">Eliminar</button> : <span />}<div className="flex gap-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></div></div></div>
 }
@@ -382,7 +382,8 @@ function Dash({ vs, ins, wk, reqs, obs, who, onReload, openRep, openWork, openHi
   const inMonth = mine.filter(w => w.entry_date.slice(0, 7) === month)
   const list = wt === 'act' ? mine.filter(w => w.entry_date >= ymd(s0) && w.entry_date <= ymd(e0)) : wt === 'mes' ? inMonth : inMonth.filter(w => Math.min(3, Math.floor((+w.entry_date.slice(8, 10) - 1) / 7)) === +wt)
   const ord = { falta: 0, pedida: 1, hecha: 2 }
-  const rows = vs.map(v => { const last = ins.find(x => x.vehicle_id === v.id && x.kind === 'inspeccion'); const r = reqs.find(x => x.vehicle_id === v.id && x.period === cur); const st: 'hecha' | 'pedida' | 'falta' = last && period(last.date) === cur ? 'hecha' : r ? 'pedida' : 'falta'; return { v, last, r, st } }).sort((a, b) => ord[a.st] - ord[b.st] || a.v.plate.localeCompare(b.v.plate))
+  const quin = vs.filter(v => (v.insp_freq ?? 'quincenal') === 'quincenal')
+  const rows = quin.map(v => { const last = ins.find(x => x.vehicle_id === v.id && x.kind === 'inspeccion'); const r = reqs.find(x => x.vehicle_id === v.id && x.period === cur); const st: 'hecha' | 'pedida' | 'falta' = last && period(last.date) === cur ? 'hecha' : r ? 'pedida' : 'falta'; return { v, last, r, st } }).sort((a, b) => ord[a.st] - ord[b.st] || a.v.plate.localeCompare(b.v.plate))
   const n = (k: string) => rows.filter(r => r.st === k).length
   async function toggle(v: V, has: boolean) {
     const q = has ? await supabase.from('insp_requests').delete().eq('vehicle_id', v.id).eq('period', cur) : await supabase.from('insp_requests').insert({ vehicle_id: v.id, period: cur, requested_by: who })
@@ -402,7 +403,7 @@ function Dash({ vs, ins, wk, reqs, obs, who, onReload, openRep, openWork, openHi
         {open && <button onClick={() => setEx(w)} className={btn}>Registrar salida</button>}<button onClick={() => openWork(w.id)} className={btn}>Informe</button></div> })}
       {!list.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay ingresos a taller en este período.</p>}</div>
 
-    <div className="mt-10"><h3 className="text-lg font-semibold text-white">Ronda de revisión de 15 días</h3><p className="mt-1 text-xs text-slate-500">{periodLabel(cur)}</p></div>
+    <div className="mt-10"><h3 className="text-lg font-semibold text-white">Ronda de revisión de 15 días</h3><p className="mt-1 text-xs text-slate-500">{periodLabel(cur)}</p>{vs.length > quin.length && <p className="mt-1 text-[11px] text-slate-600">No incluye {vs.length - quin.length} camioneta(s) con inspección mensual o sin recordatorio.</p>}</div>
     <div className="mt-3 flex flex-wrap gap-2">{([['todas', `Todas (${rows.length})`], ['falta', `Faltan pedir (${n('falta')})`], ['pedida', `Pedidas (${n('pedida')})`], ['hecha', `Hechas (${n('hecha')})`]] as const).map(([k, l]) => <button key={k} onClick={() => setRf(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${rf === k ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
     <div className="mt-3 flex flex-col gap-2">{rows.filter(r => rf === 'todas' || r.st === rf).map(({ v, last, r, st }) => { const col = st === 'hecha' ? GREEN : st === 'pedida' ? AMBER : RED; const lw = wk.find(w => w.vehicle_id === v.id)
       return <div key={v.id} className="frost-card flex flex-wrap items-center gap-3 p-4"><span className="size-2.5 shrink-0 rounded-full" style={{ background: col }} /><div className="min-w-0 flex-1"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}{st === 'pedida' && r && ` · pedida el ${fmtD(r.requested_at)}${r.requested_by ? ' por ' + r.requested_by : ''}`}</p></div>
@@ -466,9 +467,13 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   }
   const status = (id: string) => {
     const l = ins.find(x => x.vehicle_id === id && x.kind === 'inspeccion')
-    if (!l) return { c: RED, t: 'Sin inspección', l }
-    const d = Math.floor((Date.parse(today()) - Date.parse(l.date)) / 864e5), t = d === 0 ? 'hoy' : `hace ${d} día${d === 1 ? '' : 's'}`
-    return d > 15 ? { c: RED, t: `Vencida · ${t}`, l } : d >= 12 ? { c: AMBER, t: `Vence pronto · ${t}`, l } : { c: GREEN, t: `Al día · ${t}`, l }
+    const fr = vs.find(x => x.id === id)?.insp_freq ?? 'quincenal'
+    const d = l ? Math.floor((Date.parse(today()) - Date.parse(l.date)) / 864e5) : null
+    const t = d === null ? '' : d === 0 ? 'hoy' : `hace ${d} día${d === 1 ? '' : 's'}`
+    if (fr === 'manual') return { c: '#64748b', t: l ? `Sin recordatorio · última ${t}` : 'Sin recordatorio', l }
+    if (d === null) return { c: RED, t: 'Sin inspección', l }
+    const lim = fr === 'mensual' ? 30 : 15, soon = fr === 'mensual' ? 25 : 12, tag = fr === 'mensual' ? ' · mensual' : ''
+    return d > lim ? { c: RED, t: `Vencida · ${t}${tag}`, l } : d >= soon ? { c: AMBER, t: `Vence pronto · ${t}${tag}`, l } : { c: GREEN, t: `Al día · ${t}${tag}`, l }
   }
   const vOf = (id: string) => vs.find(x => x.id === id)
   const start = (v: V, k: Kind) => { setCur(v); setKind(k); setScr('form') }
@@ -503,7 +508,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
     {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste taller.sql y panel.sql en Supabase?</p>}
     <div className="mb-5 flex gap-1 border-b border-white/[0.08]">{([['panel', 'Panel de flota'], ['veh', 'Vehículos']] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>)}</div>
     {tab === 'panel' ? <><Dash vs={shown} ins={ins} wk={wk} reqs={reqs} obs={obs} who={who} onReload={load} openRep={id => { setCur(null); openRep(id) }} openWork={id => { setCur(null); openWorkId(id) }} openHist={v => { setCur(v); setScr('hist') }} /></> : <>
-    {overdue > 0 && <p className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{overdue} vehículo{overdue === 1 ? '' : 's'} con la inspección de 15 días vencida o pendiente.</p>}
+    {overdue > 0 && <p className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{overdue} vehículo{overdue === 1 ? '' : 's'} con la inspección vencida o pendiente.</p>}
     {(() => { const near = shown.filter(v => v.km_next != null && v.km_next - v.odometer <= 2000); const red = near.filter(v => v.km_next! - v.odometer <= 1000).length; return near.length > 0 && <p className="mb-5 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: (red ? RED : AMBER) + '55', background: (red ? RED : AMBER) + '14', color: red ? '#fca5a5' : '#fdba74' }}>{near.length} vehículo{near.length === 1 ? '' : 's'} con mantenimiento próximo o vencido (menos de 2.000 km){red ? ` · ${red} urgente${red === 1 ? '' : 's'}` : ''}.</p> })()}
     {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">{q || area ? 'Sin resultados con ese filtro.' : <>No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</>}</p>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{shown.map(v => { const s = status(v.id); const m = s.l ? Object.values(s.l.items).filter((i: Item) => i.s === 'M').length : 0; const r = s.l ? Object.values(s.l.items).filter((i: Item) => i.s === 'R').length : 0

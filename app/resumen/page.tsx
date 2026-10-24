@@ -38,16 +38,21 @@ async function compute(mods: string[]): Promise<Data> {
   }
   if (mods.includes('inspecciones')) {
     const qs = `${month}-${half ? '01' : '16'}`, per = `${month}-${half ? 'Q1' : 'Q2'}`
-    const [v, i, rq, w, o] = await Promise.all([supabase.from('insp_vehicles').select('id,odometer,km_next'), supabase.from('inspections').select('vehicle_id').eq('kind', 'inspeccion').gte('date', qs), supabase.from('insp_requests').select('vehicle_id').eq('period', per), supabase.from('insp_workshop').select('vehicle_id').is('exit_date', null), supabase.from('insp_observations').select('priority').eq('done', false)])
-    if (!v.error && !i.error && !rq.error && !w.error && !o.error) {
+    const d30 = ymd(new Date(Date.now() - 30 * 864e5))
+    const [v, i, rq, w, o, m] = await Promise.all([supabase.from('insp_vehicles').select('id,odometer,km_next,insp_freq'), supabase.from('inspections').select('vehicle_id').eq('kind', 'inspeccion').gte('date', qs), supabase.from('insp_requests').select('vehicle_id').eq('period', per), supabase.from('insp_workshop').select('vehicle_id').is('exit_date', null), supabase.from('insp_observations').select('priority').eq('done', false), supabase.from('inspections').select('vehicle_id').eq('kind', 'inspeccion').gte('date', d30)])
+    if (!v.error && !i.error && !rq.error && !w.error && !o.error && !m.error) {
       const vs = v.data ?? [], done = new Set((i.data ?? []).map(x => x.vehicle_id)), asked = new Set((rq.data ?? []).map(x => x.vehicle_id))
-      const faltan = vs.filter(x => !done.has(x.id) && !asked.has(x.id)).length
+      const fr = (x: { insp_freq?: string }) => x.insp_freq ?? 'quincenal'
+      const quin = vs.filter(x => fr(x) === 'quincenal'), done30 = new Set((m.data ?? []).map(x => x.vehicle_id))
+      const mensPend = vs.filter(x => fr(x) === 'mensual' && !done30.has(x.id)).length
+      const faltan = quin.filter(x => !done.has(x.id) && !asked.has(x.id)).length
       const mant = vs.filter(x => x.km_next != null && +x.km_next - +x.odometer <= 1000).length
       const ob = o.data ?? [], cnt = (p: string) => ob.filter(x => x.priority === p).length
-      d.insp = { hechas: vs.filter(x => done.has(x.id)).length, total: vs.length, taller: (w.data ?? []).length, mant, r: cnt('A'), a: cnt('M'), v: cnt('B') }
+      d.insp = { hechas: quin.filter(x => done.has(x.id)).length, total: quin.length, taller: (w.data ?? []).length, mant, r: cnt('A'), a: cnt('M'), v: cnt('B') }
       if (cnt('A')) d.alerts.push({ c: RED, t: `${cnt('A')} pendiente${cnt('A') === 1 ? '' : 's'} en rojo en camionetas`, href: '/inspecciones' })
       if ((w.data ?? []).length) d.alerts.push({ c: AMBER, t: `${(w.data ?? []).length} camioneta${(w.data ?? []).length === 1 ? '' : 's'} en taller`, href: '/inspecciones' })
       if (mant) d.alerts.push({ c: AMBER, t: `${mant} camioneta${mant === 1 ? '' : 's'} con el mantenimiento a menos de 1.000 km`, href: '/inspecciones' })
+      if (mensPend) d.alerts.push({ c: AMBER, t: `${mensPend} camioneta${mensPend === 1 ? '' : 's'} con la inspección mensual pendiente`, href: '/inspecciones' })
       if (faltan) d.alerts.push({ c: AMBER, t: `${faltan} camioneta${faltan === 1 ? '' : 's'} sin pedir en la ronda de revisión`, href: '/inspecciones' })
     }
   }

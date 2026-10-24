@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-type Tech = { id: string; name: string; area: string; phone: string; active: boolean; off_from: string | null; off_to: string | null; off_reason: string }
-type Veh = { id: string; name: string; plate: string; driver: string; area: string; odometer: number; km_next: number | null }
-type Route = { id: string; number: number; year: number; week: number; tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; depart_time: string | null; return_date: string | null; cash: number; work_days: number | null; status: 'borrador' | 'confirmada' | 'cerrada'; notes: string; created_by_name: string; created_at: string }
-type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; notes: string; created_by_name: string; created_at: string }
+export type Tech = { id: string; name: string; area: string; phone: string; active: boolean; off_from: string | null; off_to: string | null; off_reason: string }
+export type Veh = { id: string; name: string; plate: string; driver: string; area: string; odometer: number; km_next: number | null }
+export type Route = { id: string; number: number; year: number; week: number; tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; depart_time: string | null; return_date: string | null; cash: number; work_days: number | null; status: 'borrador' | 'confirmada' | 'cerrada'; notes: string; created_by_name: string; created_at: string }
+export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; notes: string; created_by_name: string; created_at: string }
 type Change = { id: string; who: string; what: string; at: string }
 type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; return_date: string | null }
 
@@ -40,6 +40,58 @@ function Modal({ title, sub, onClose, children }: { title: string; sub?: string;
     <div className="p-5">{children}</div></div></div>
 }
 const Chip = ({ c, t }: { c: string; t: string }) => <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: c + '22', color: c }}>{t}</span>
+
+type Ctx = { techs: Tech[]; vehs: Veh[]; who: string; techState: (t: Tech, d?: string) => { l: string; c: string }; vehState: (v: Veh, d?: string) => { l: string; c: string }; warn: (r: Draft, selfId: string | null) => string[]; tName: (id?: string | null) => string; vOf: (id?: string | null) => Veh | undefined; log: (id: string, what: string) => PromiseLike<unknown>; load: () => Promise<void>; open: (id: string) => void; back: () => void }
+const Warn = ({ list }: { list: string[] }) => list.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">{list.map((w, i) => <p key={i} className="py-0.5">⚠ {w}</p>)}</div> : null
+const iwInfo = (d: string) => { const w = isoWeek(d); return <p className="text-xs text-slate-500 sm:col-span-2">Semana {w.week} del {w.year}. El número de ruta se asigna solo al crear.</p> }
+
+function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
+  const { techs, vehs, who, techState, vehState, warn, tName, vOf, log, load, open, back } = c
+  const [d, setD] = useState({ tech_id: r?.tech_id ?? '', support: r?.support ?? [] as string[], vehicle_id: r?.vehicle_id ?? '', depart_date: r?.depart_date ?? today(), depart_time: r?.depart_time?.slice(0, 5) ?? '', return_date: r?.return_date ?? '', cash: String(r?.cash ?? ''), days: r?.work_days != null ? String(r.work_days) : '', notes: r?.notes ?? '' })
+  const [e, setE] = useState('')
+  const auto = d.return_date && d.return_date >= d.depart_date ? workDays(d.depart_date, d.return_date) : null
+  const ws = warn({ tech_id: d.tech_id || null, support: d.support, vehicle_id: d.vehicle_id || null, depart_date: d.depart_date, return_date: d.return_date || null }, r?.id ?? null)
+  const act = techs.filter(t => t.active)
+  async function save() {
+    if (!d.tech_id || !d.vehicle_id || !d.depart_date) return setE('Elige el técnico, la camioneta y la fecha de salida.')
+    if (d.return_date && d.return_date < d.depart_date) return setE('El retorno no puede ser antes de la salida.')
+    const iw = isoWeek(d.depart_date)
+    const body = { tech_id: d.tech_id, support: d.support.filter(x => x !== d.tech_id), vehicle_id: d.vehicle_id, depart_date: d.depart_date, depart_time: d.depart_time || null, return_date: d.return_date || null, cash: +d.cash || 0, work_days: d.days ? +d.days : auto, notes: d.notes.trim(), year: iw.year, week: iw.week }
+    if (r) {
+      const { error } = await supabase.from('rt_routes').update(body).eq('id', r.id)
+      if (error) return setE(error.message)
+      const ch: string[] = []
+      if (r.tech_id !== body.tech_id) ch.push(`Técnico: ${tName(r.tech_id)} → ${tName(body.tech_id)}`)
+      if (r.support.join() !== body.support.join()) ch.push(`Apoyo: ${r.support.map(tName).join(', ') || '-'} → ${body.support.map(tName).join(', ') || '-'}`)
+      if (r.vehicle_id !== body.vehicle_id) ch.push(`Camioneta: ${vOf(r.vehicle_id)?.plate ?? '-'} → ${vOf(body.vehicle_id)?.plate ?? '-'}`)
+      if (r.depart_date !== body.depart_date || (r.depart_time ?? '').slice(0, 5) !== (body.depart_time ?? '')) ch.push(`Salida: ${fmtD(r.depart_date)} → ${fmtD(body.depart_date)} ${body.depart_time ?? ''}`)
+      if ((r.return_date ?? '') !== (body.return_date ?? '')) ch.push(`Retorno: ${fmtD(r.return_date)} → ${fmtD(body.return_date)}`)
+      if (r.cash !== body.cash) ch.push(`Efectivo: ${r.cash} → ${body.cash} Bs`)
+      if (ch.length) await log(r.id, ch.join(' · '))
+      await load(); open(r.id)
+    } else {
+      const { data, error } = await supabase.from('rt_routes').insert({ ...body, created_by_name: who }).select('id').single()
+      if (error) return setE(error.message)
+      await log(data.id, 'Creó la ruta'); await load(); open(data.id)
+    }
+  }
+  const toggleSup = (id: string) => setD({ ...d, support: d.support.includes(id) ? d.support.filter(x => x !== id) : [...d.support, id] })
+  return <div className="no-print mx-auto max-w-2xl">
+    <button onClick={() => (r ? open(r.id) : back())} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
+    <h2 className="text-2xl font-semibold text-white">{r ? `Editar ruta ${r.number}` : 'Nueva ruta'}</h2>
+    <div className="frost-card mt-5 grid gap-4 p-5 sm:grid-cols-2">
+      <Lab t="Técnico asignado"><select className={inp} value={d.tech_id} onChange={x => setD({ ...d, tech_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{act.map(t => { const s = techState(t, d.depart_date); return <option key={t.id} value={t.id} className="bg-[#111a2a]">{t.name} · {s.l}</option> })}</select></Lab>
+      <Lab t="Camioneta"><select className={inp} value={d.vehicle_id} onChange={x => setD({ ...d, vehicle_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{[...vehs].sort((a, b) => Number(b.area === 'Servicio') - Number(a.area === 'Servicio') || a.plate.localeCompare(b.plate)).map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name} · {vehState(v, d.depart_date).l}</option>)}</select></Lab>
+      <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div></Lab></div>
+      <Lab t="Fecha de salida"><input type="date" className={inp} value={d.depart_date} onChange={x => setD({ ...d, depart_date: x.target.value })} /></Lab><Lab t="Hora de salida"><input type="time" className={inp} value={d.depart_time} onChange={x => setD({ ...d, depart_time: x.target.value })} /></Lab>
+      <Lab t="Retorno estimado"><input type="date" className={inp} value={d.return_date} onChange={x => setD({ ...d, return_date: x.target.value })} /></Lab><Lab t={`Días laborales${auto != null ? ` (calculado: ${auto})` : ''}`}><input type="number" className={inp} value={d.days} placeholder={auto != null ? String(auto) : ''} onChange={x => setD({ ...d, days: x.target.value })} /></Lab>
+      <Lab t="Efectivo asignado (Bs)"><input type="number" inputMode="decimal" className={inp} value={d.cash} onChange={x => setD({ ...d, cash: x.target.value })} /></Lab><Lab t="Observaciones"><input className={inp} value={d.notes} onChange={x => setD({ ...d, notes: x.target.value })} /></Lab>
+      {iwInfo(d.depart_date)}</div>
+    <div className="mt-4"><Warn list={ws} /></div>
+    {e && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{e}</p>}
+    <button onClick={save} className="mt-5 h-12 w-full rounded-xl text-sm font-bold text-[#0b0f17]" style={{ background: GREEN }}>{r ? 'Guardar cambios' : 'Crear ruta'}</button>
+  </div>
+}
 
 function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ name: t?.name ?? '', area: t?.area ?? '', phone: t?.phone ?? '', active: t?.active ?? true, from: t?.off_from ?? '', to: t?.off_to ?? '', why: t?.off_reason || 'Vacación' })
@@ -96,7 +148,7 @@ function ReqForm({ q, route, clients, who, onClose, onDone }: { q: Req | null; r
     <div className="flex justify-end gap-2 sm:col-span-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></Modal>
 }
 
-function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
+export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
   const nm = (id?: string | null) => techs.find(t => t.id === id)?.name ?? '—'
   const cell = 'border border-gray-400 px-1 py-0.5 align-top'
   const rows = [...visits].sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
@@ -112,6 +164,33 @@ function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]
       {r.notes && <p className="mt-3"><b>Observaciones:</b> {r.notes}</p>}
     </div></div>
 }
+
+const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const cl = (v: unknown, st = 's', merge = 0) => `<Cell ss:StyleID="${st}"${merge ? ` ss:MergeAcross="${merge}"` : ''}><Data ss:Type="String">${esc(v)}</Data></Cell>`
+const rw = (cells: string[]) => `<Row>${cells.join('')}</Row>`
+function weekXml(week: number, year: number, routes: Route[], techs: Tech[], vehs: Veh[], reqs: Req[], tState: (t: Tech) => { l: string }, tName: (id?: string | null) => string): string {
+  const bd = ['Left', 'Right', 'Top', 'Bottom'].map(p => `<Border ss:Position="${p}" ss:LineStyle="Continuous" ss:Weight="1"/>`).join('')
+  const st = (id: string, extra = '') => `<Style ss:ID="${id}"><Alignment ss:Vertical="Top" ss:WrapText="1"${id === 'h' || id.startsWith('p') ? ' ss:Horizontal="Center"' : ''}/><Borders>${bd}</Borders>${extra}</Style>`
+  const styles = `<Styles><Style ss:ID="Default"><Font ss:FontName="Calibri" ss:Size="10"/></Style>${st('s')}${st('b', '<Font ss:Bold="1"/>')}${st('h', '<Font ss:Bold="1"/><Interior ss:Color="#D9D9D9" ss:Pattern="Solid"/>')}${st('p1', '<Font ss:Bold="1"/><Interior ss:Color="#FF0000" ss:Pattern="Solid"/>')}${st('p2', '<Font ss:Bold="1"/><Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>')}${st('p3', '<Font ss:Bold="1"/><Interior ss:Color="#34A853" ss:Pattern="Solid"/>')}<Style ss:ID="t"><Font ss:Bold="1" ss:Size="14"/></Style><Style ss:ID="f"><Alignment ss:Horizontal="Center"/><Font ss:Bold="1"/></Style></Styles>`
+  const sheet = (name: string, widths: number[], rows: string[]) => `<Worksheet ss:Name="${esc(name).slice(0, 31)}"><Table>${widths.map(w => `<Column ss:Width="${w}"/>`).join('')}${rows.join('')}</Table></Worksheet>`
+  const rrhh = sheet('RRHH', [110, 160, 110, 110], [rw([cl('CIAGRO SRL · Técnicos', 't')]), rw(['Área', 'Técnico', 'Estado hoy', 'Teléfono'].map(h => cl(h, 'h'))), ...techs.filter(t => t.active).map(t => rw([cl(t.area), cl(t.name), cl(tState(t).l), cl(t.phone)]))])
+  const car = sheet('Camionetas', [90, 160, 140, 90], [rw([cl('Camionetas', 't')]), rw(['Placa', 'Vehículo', 'Responsable', 'Área'].map(h => cl(h, 'h'))), ...vehs.map(v => rw([cl(v.plate), cl(v.name), cl(v.driver), cl(v.area)]))])
+  const fd = (s?: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '')
+  const route = (r: Route) => {
+    const v = vehs.find(x => x.id === r.vehicle_id), vs = reqs.filter(q => q.route_id === r.id && q.status !== 'cancelada').sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
+    const head = ['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'Fecha llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'Fecha pago', 'Fecha visita']
+    const rows = [rw([cl('CIAGRO SRL', 't'), cl(''), cl('RUTA DE TRABAJO', 't', 3), cl(''), cl(''), cl(`SEMANA ${r.week} · AÑO ${r.year} · Nº ${r.number}`, 'b', 4)]),
+      rw([cl('Técnico asignado', 'b', 1), cl(tName(r.tech_id), 's', 2), cl('Salida', 'b'), cl(`${fd(r.depart_date)} ${r.depart_time?.slice(0, 5) ?? ''}`, 's', 2)]),
+      rw([cl('Técnico de apoyo', 'b', 1), cl(r.support.map(i => tName(i)).join(' - ') || '-', 's', 2), cl('Retorno estimado', 'b'), cl(fd(r.return_date), 's', 2)]),
+      rw([cl('Vehículo (placa)', 'b', 1), cl(v ? `${v.plate} · ${v.name}` : '', 's', 2), cl('Efectivo (Bs)', 'b'), cl(`${r.cash} · ${r.work_days ?? '-'} días laborales`, 's', 2)]),
+      rw([cl('Prioridad: 1 = Alta / 2 = Normal / 3 = Baja', 't')]), rw(head.map(h => cl(h, 'h')))]
+    for (let i = 0; i < Math.max(6, vs.length); i++) { const q = vs[i]; rows.push(rw(q ? [cl(i + 1), cl(q.client), cl(q.brand), cl(q.machine), cl(q.model), cl(fd(q.call_date)), cl(q.zone), cl(q.contact), cl(q.meeting_point), cl(q.job), cl(q.warranty ? 'SI' : 'NO'), cl(q.credit ? 'SI' : 'NO'), cl(q.priority, 'p' + q.priority), cl(q.amount ?? '-'), cl(q.paid_date ? fd(q.paid_date) : '-'), cl(fd(q.visit_date))] : [cl(i + 1), ...Array.from({ length: 15 }, () => cl(''))])) }
+    rows.push(rw([]), rw([cl(''), ...FIRMAS.flatMap(([n]) => [cl(n, 'f', 3), cl('')])]), rw([cl(''), ...FIRMAS.flatMap(([, c]) => [cl(c, 'f', 3), cl('')])]))
+    return sheet(String(r.number), [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${rrhh}${car}${routes.map(route).join('')}</Workbook>`
+}
+function download(name: string, text: string) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/vnd.ms-excel;charset=utf-8' })); a.download = name; a.click() }
 
 export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string }) {
   const [techs, setTechs] = useState<Tech[]>([])
@@ -192,55 +271,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     }
     return w
   }
-  const Warn = ({ list }: { list: string[] }) => list.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">{list.map((w, i) => <p key={i} className="py-0.5">⚠ {w}</p>)}</div> : null
 
-  function RouteForm({ r }: { r: Route | null }) {
-    const [d, setD] = useState({ tech_id: r?.tech_id ?? '', support: r?.support ?? [] as string[], vehicle_id: r?.vehicle_id ?? '', depart_date: r?.depart_date ?? today(), depart_time: r?.depart_time?.slice(0, 5) ?? '', return_date: r?.return_date ?? '', cash: String(r?.cash ?? ''), days: r?.work_days != null ? String(r.work_days) : '', notes: r?.notes ?? '' })
-    const [e, setE] = useState('')
-    const auto = d.return_date && d.return_date >= d.depart_date ? workDays(d.depart_date, d.return_date) : null
-    const ws = warn({ tech_id: d.tech_id || null, support: d.support, vehicle_id: d.vehicle_id || null, depart_date: d.depart_date, return_date: d.return_date || null }, r?.id ?? null)
-    const act = techs.filter(t => t.active)
-    async function save() {
-      if (!d.tech_id || !d.vehicle_id || !d.depart_date) return setE('Elige el técnico, la camioneta y la fecha de salida.')
-      if (d.return_date && d.return_date < d.depart_date) return setE('El retorno no puede ser antes de la salida.')
-      const iw = isoWeek(d.depart_date)
-      const body = { tech_id: d.tech_id, support: d.support.filter(x => x !== d.tech_id), vehicle_id: d.vehicle_id, depart_date: d.depart_date, depart_time: d.depart_time || null, return_date: d.return_date || null, cash: +d.cash || 0, work_days: d.days ? +d.days : auto, notes: d.notes.trim(), year: iw.year, week: iw.week }
-      if (r) {
-        const { error } = await supabase.from('rt_routes').update(body).eq('id', r.id)
-        if (error) return setE(error.message)
-        const ch: string[] = []
-        if (r.tech_id !== body.tech_id) ch.push(`Técnico: ${tName(r.tech_id)} → ${tName(body.tech_id)}`)
-        if (r.support.join() !== body.support.join()) ch.push(`Apoyo: ${r.support.map(tName).join(', ') || '-'} → ${body.support.map(tName).join(', ') || '-'}`)
-        if (r.vehicle_id !== body.vehicle_id) ch.push(`Camioneta: ${vOf(r.vehicle_id)?.plate ?? '-'} → ${vOf(body.vehicle_id)?.plate ?? '-'}`)
-        if (r.depart_date !== body.depart_date || (r.depart_time ?? '').slice(0, 5) !== (body.depart_time ?? '')) ch.push(`Salida: ${fmtD(r.depart_date)} → ${fmtD(body.depart_date)} ${body.depart_time ?? ''}`)
-        if ((r.return_date ?? '') !== (body.return_date ?? '')) ch.push(`Retorno: ${fmtD(r.return_date)} → ${fmtD(body.return_date)}`)
-        if (r.cash !== body.cash) ch.push(`Efectivo: ${r.cash} → ${body.cash} Bs`)
-        if (ch.length) await log(r.id, ch.join(' · '))
-        await load(); open(r.id)
-      } else {
-        const { data, error } = await supabase.from('rt_routes').insert({ ...body, created_by_name: who }).select('id').single()
-        if (error) return setE(error.message)
-        await log(data.id, 'Creó la ruta'); await load(); open(data.id)
-      }
-    }
-    const toggleSup = (id: string) => setD({ ...d, support: d.support.includes(id) ? d.support.filter(x => x !== id) : [...d.support, id] })
-    return <div className="no-print mx-auto max-w-2xl">
-      <button onClick={() => (r ? open(r.id) : setScr('main'))} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
-      <h2 className="text-2xl font-semibold text-white">{r ? `Editar ruta ${r.number}` : 'Nueva ruta'}</h2>
-      <div className="frost-card mt-5 grid gap-4 p-5 sm:grid-cols-2">
-        <Lab t="Técnico asignado"><select className={inp} value={d.tech_id} onChange={x => setD({ ...d, tech_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{act.map(t => { const s = techState(t, d.depart_date); return <option key={t.id} value={t.id} className="bg-[#111a2a]">{t.name} · {s.l}</option> })}</select></Lab>
-        <Lab t="Camioneta"><select className={inp} value={d.vehicle_id} onChange={x => setD({ ...d, vehicle_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{[...vehs].sort((a, b) => Number(b.area === 'Servicio') - Number(a.area === 'Servicio') || a.plate.localeCompare(b.plate)).map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name} · {vehState(v, d.depart_date).l}</option>)}</select></Lab>
-        <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div></Lab></div>
-        <Lab t="Fecha de salida"><input type="date" className={inp} value={d.depart_date} onChange={x => setD({ ...d, depart_date: x.target.value })} /></Lab><Lab t="Hora de salida"><input type="time" className={inp} value={d.depart_time} onChange={x => setD({ ...d, depart_time: x.target.value })} /></Lab>
-        <Lab t="Retorno estimado"><input type="date" className={inp} value={d.return_date} onChange={x => setD({ ...d, return_date: x.target.value })} /></Lab><Lab t={`Días laborales${auto != null ? ` (calculado: ${auto})` : ''}`}><input type="number" className={inp} value={d.days} placeholder={auto != null ? String(auto) : ''} onChange={x => setD({ ...d, days: x.target.value })} /></Lab>
-        <Lab t="Efectivo asignado (Bs)"><input type="number" inputMode="decimal" className={inp} value={d.cash} onChange={x => setD({ ...d, cash: x.target.value })} /></Lab><Lab t="Observaciones"><input className={inp} value={d.notes} onChange={x => setD({ ...d, notes: x.target.value })} /></Lab>
-        {iwInfo(d.depart_date)}</div>
-      <div className="mt-4"><Warn list={ws} /></div>
-      {e && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{e}</p>}
-      <button onClick={save} className="mt-5 h-12 w-full rounded-xl text-sm font-bold text-[#0b0f17]" style={{ background: GREEN }}>{r ? 'Guardar cambios' : 'Crear ruta'}</button>
-    </div>
-  }
-  const iwInfo = (d: string) => { const w = isoWeek(d); return <p className="text-xs text-slate-500 sm:col-span-2">Semana {w.week} del {w.year}. El número de ruta se asigna solo al crear.</p> }
 
   async function setStatus(r: Route, st: Route['status'], what: string) {
     if (st === 'cerrada') {
@@ -279,7 +310,8 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const clients: string[] = Array.from(new Set<string>(reqs.map(q => q.client))).sort()
   const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} clients={clients} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
 
-  if (scr === 'rform') return <>{RouteForm({ r: route && rid ? route : null })}</>
+  const ctx: Ctx = { techs, vehs, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
+  if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />
   if (scr === 'sheet' && route) return <RouteSheet r={route} techs={techs} veh={vOf(route.vehicle_id)} visits={reqs.filter(q => q.route_id === route.id && q.status !== 'cancelada')} onBack={() => setScr('detail')} />
   if (scr === 'detail' && route) {
     const visits = reqs.filter(q => q.route_id === route.id).sort((a, b) => (a.visit_date ?? '').localeCompare(b.visit_date ?? ''))
@@ -296,6 +328,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         {route.status === 'cerrada' && isAdmin && <button onClick={() => setStatus(route, 'confirmada', 'Reabrió la ruta')} className={btn}>Reabrir</button>}
         {route.status !== 'cerrada' && <button onClick={() => setScr('rform')} className={btn}><Pencil className="mr-1 inline size-3.5" />Editar</button>}
         <button onClick={() => setScr('sheet')} className={btn}><Printer className="mr-1 inline size-3.5" />Ver hoja / imprimir</button>
+        <button onClick={async () => { const { error } = await supabase.from('rt_print_jobs').insert({ route_id: route.id, requested_by_name: who }); alert(error ? error.message : 'Enviada a la impresora de la oficina. Sale en unos segundos si la computadora de impresión está encendida.') }} className={btn}>Enviar a la impresora de la oficina</button>
         {isAdmin && <button onClick={() => delRoute(route)} className="h-9 rounded-lg border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}
       </div>
       <div className="mt-8 flex items-center justify-between"><h3 className="text-lg font-semibold text-white">Visitas ({visits.length})</h3>{route.status !== 'cerrada' && <button onClick={() => setRq({ q: null, route })} className="flex items-center gap-1.5 text-xs text-[#c6ff00]"><Plus className="size-4" />Nueva visita</button>}</div>
@@ -328,6 +361,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
           {rs.map(r => <button key={r.id} onClick={() => open(r.id)} className="mb-1.5 block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/[0.06]"><b className="text-white">Ruta {r.number}</b> · {tName(r.tech_id)} · <span className="font-mono">{vOf(r.vehicle_id)?.plate ?? '—'}</span>{r.status === 'borrador' && <span className="ml-1 text-slate-500">(borrador)</span>}</button>)}
           {vs.map(q => <p key={q.id} className="py-0.5 text-[11px] text-slate-400"><span className="mr-1 inline-block size-2 rounded-full" style={{ background: PRI[q.priority] }} />{q.client} · {q.zone}</p>)}
           {!rs.length && !vs.length && <p className="text-xs text-slate-600">Sin salidas</p>}</div> })}</div>
+      <button onClick={() => { const rs = routes.filter(r => r.depart_date <= days[6] && days[0] <= end(r)); const w = isoWeek(days[0]); download(`HOJA DE RUTA - SEMANA ${w.week}.xml`, weekXml(w.week, w.year, rs, techs, vehs, reqs, t => techState(t), tName)) }} className={btn + ' mt-6'}>Descargar Excel de esta semana</button>
       <h3 className="mt-8 text-sm font-semibold text-white">Técnicos hoy</h3><div className="mt-2 flex flex-wrap gap-2">{actTechs.map(t => { const s = techState(t); return <span key={t.id} className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: s.c + '66', color: s.c }}>{t.name} · {s.l}</span> })}</div>
       <h3 className="mt-6 text-sm font-semibold text-white">Camionetas fuera de servicio hoy</h3><div className="mt-2 flex flex-wrap gap-2">{vehs.map(v => ({ v, s: vehState(v) })).filter(x => x.s.l !== 'Disponible').map(({ v, s }) => <span key={v.id} className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: s.c + '66', color: s.c }}>{v.plate} · {s.l}</span>)}{!vehs.some(v => vehState(v).l !== 'Disponible') && <span className="text-xs text-slate-500">Todas disponibles.</span>}</div>
     </div>}

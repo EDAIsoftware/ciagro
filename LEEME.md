@@ -26,3 +26,13 @@ Vercel despliega solo. Recarga con Ctrl+F5.
 3. Cada persona toca el lápiz junto a su nombre para poner su nombre en vez del correo.
 
 Si alguna pantalla muestra "¿Ya ejecutaste ... .sql?", falta ejecutar el Paso 1.
+
+## Impresora de la oficina (estación de impresión)
+1. En la computadora de la oficina, inicia sesión en la plataforma con una cuenta que tenga "Rutas de servicio".
+2. Crea un acceso directo de Chrome con este destino (cambia la dirección por la tuya):
+   chrome.exe --kiosk-printing https://TU-DIRECCION.vercel.app/rutas/impresion
+3. Deja la impresora láser como predeterminada de Windows, desactiva la suspensión automática y deja esa ventana abierta.
+4. Desde cualquier teléfono: Rutas > abrir una ruta > "Enviar a la impresora de la oficina". Sale sola.
+
+## Excel de la semana
+Rutas > pestaña Semana > "Descargar Excel de esta semana". Se abre en Excel con las hojas RRHH, Camionetas y una por ruta.

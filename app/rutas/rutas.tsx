@@ -18,7 +18,7 @@ const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 
 const btn = 'h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5'
 const DN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-const FIRMAS = [['GUIDO MORENO', 'SUBGERENTE SERVICIO TEC.'], ['NICOLAS FAREL', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
+const FIRMAS = [['NICOLAS FAREL', 'SUBGERENTE SERVICIO TEC.'], ['GUIDO MORENO', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const today = () => ymd(new Date())
 const fmtD = (s?: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')

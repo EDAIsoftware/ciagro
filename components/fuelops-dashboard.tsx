@@ -133,6 +133,7 @@ export default function FuelOpsDashboard() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [role, setRole] = useState<'admin' | 'operador'>('operador')
   const [mods, setMods] = useState<string[] | null>(null)
+  useEffect(() => { try { if (localStorage.getItem('edai-estacion') === '1' && !location.search.includes('normal')) location.replace('/rutas/impresion') } catch { /* sin acceso */ } }, [])
   const canRutas = !!mods?.includes('rutas')
   const canPrep = !!mods && (mods.includes('tractores') || mods.includes('implementos'))
   const [who, setWho] = useState('')

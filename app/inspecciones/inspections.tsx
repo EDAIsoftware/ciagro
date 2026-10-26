@@ -177,7 +177,7 @@ function Form({ v, kind, who, onClose, onDone }: { v: V; kind: Kind; who: string
   </div>
 }
 
-function Report({ i, v, onBack, onDelete }: { i: Insp; v?: V; onBack: () => void; onDelete?: () => void }) {
+function Report({ i, v, onBack, onDelete, onNext, nextLabel }: { i: Insp; v?: V; onBack: () => void; onDelete?: () => void; onNext?: () => void; nextLabel?: string }) {
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [obs, setObs] = useState<Obs[]>([])
   const groups = i.kind === 'inspeccion' ? INSP : i.kind === 'taller' ? TALLER : RECEP
@@ -185,6 +185,7 @@ function Report({ i, v, onBack, onDelete }: { i: Insp; v?: V; onBack: () => void
   const row = (a: string, b?: string) => <div className="flex gap-2 border-b border-gray-300 py-1"><span className="w-40 shrink-0 font-semibold">{a}</span><span>{b || '—'}</span></div>
   return <div>
     <div className="no-print mb-4 flex flex-wrap items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
+      {onNext && <button onClick={onNext} className="flex h-10 items-center rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>{nextLabel}</button>}
       {onDelete && <button onClick={onDelete} className="flex h-10 items-center gap-1.5 rounded-xl border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="size-4" />Eliminar</button>}
       <button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
     <div className="mx-auto max-w-4xl rounded-lg bg-white p-6 text-[12px] text-black sm:p-10">
@@ -369,32 +370,59 @@ function WorkReport({ w, v, onBack, onChanged, onDelete }: { w: Work; v?: V; onB
   </div>
 }
 
-function Dash({ vs, ins, wk, reqs, obs, who, onReload, openRep, openWork, openHist }: { vs: V[]; ins: Insp[]; wk: Work[]; reqs: Req[]; obs: Obs[]; who: string; onReload: () => void; openRep: (id: string) => void; openWork: (id: string) => void; openHist: (v: V) => void }) {
+function Menu({ items }: { items: [string, () => void][] }) {
+  const [open, setOpen] = useState(false)
+  return <div className="relative"><button onClick={() => setOpen(o => !o)} aria-label="Más opciones" className="grid size-10 place-items-center rounded-xl border border-white/10 text-lg leading-none text-slate-300 hover:bg-white/5">⋯</button>
+    {open && <><div className="fixed inset-0 z-10" onClick={() => setOpen(false)} /><div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#111a2a] shadow-xl">{items.map(([l, f]) => <button key={l} onClick={() => { setOpen(false); f() }} className="block w-full px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/5">{l}</button>)}</div></>}</div>
+}
+
+function Hoy({ vs, ins, reqs, obs, wk, who, otherOverdue, onReload, openRep, onStart, openPend }: { vs: V[]; ins: Insp[]; reqs: Req[]; obs: Obs[]; wk: Work[]; who: string; otherOverdue: number; onReload: () => void; openRep: (id: string) => void; onStart: (v: V, k: Kind) => void; openPend: () => void }) {
+  const [f, setF] = useState<'todas' | 'falta' | 'pedida' | 'hecha'>('todas')
+  const [q, setQ] = useState('')
+  const cur = period()
+  const quin = vs.filter(v => (v.insp_freq ?? 'quincenal') === 'quincenal')
+  const ord = { falta: 0, pedida: 1, hecha: 2 }
+  const all = quin.map(v => { const last = ins.find(x => x.vehicle_id === v.id && x.kind === 'inspeccion'); const r = reqs.find(x => x.vehicle_id === v.id && x.period === cur); const st: 'hecha' | 'pedida' | 'falta' = last && period(last.date) === cur ? 'hecha' : r ? 'pedida' : 'falta'; return { v, last, r, st } }).sort((a, b) => ord[a.st] - ord[b.st] || a.v.plate.localeCompare(b.v.plate))
+  const n = (k: string) => all.filter(r => r.st === k).length
+  const words = plain(q).split(/\s+/).filter(Boolean)
+  const rows = all.filter(r => (f === 'todas' || r.st === f) && (!words.length || words.every(w => plain(`${r.v.plate} ${r.v.driver} ${r.v.name} ${r.v.area}`).includes(w))))
+  const reds = obs.filter(o => o.priority === 'A' && vs.some(v => v.id === o.vehicle_id)).length
+  const inShop = wk.filter(w => !w.exit_date && vs.some(v => v.id === w.vehicle_id)).length
+  const mant = vs.filter(v => v.km_next != null && v.km_next - v.odometer <= 1000).length
+  const alerts = [reds && `${reds} pendiente${reds === 1 ? '' : 's'} en rojo`, inShop && `${inShop} en taller`, mant && `${mant} con mantenimiento cerca`, otherOverdue && `${otherOverdue} con inspección vencida`].filter((x): x is string => !!x)
+  async function toggle(v: V, has: boolean) {
+    const r = has ? await supabase.from('insp_requests').delete().eq('vehicle_id', v.id).eq('period', cur) : await supabase.from('insp_requests').insert({ vehicle_id: v.id, period: cur, requested_by: who })
+    r.error ? alert(r.error.message) : onReload()
+  }
+  return <div>
+    <h3 className="text-lg font-semibold text-white">Por inspeccionar</h3><p className="mt-0.5 text-xs text-slate-500">{periodLabel(cur)}</p>
+    {alerts.length > 0 && <button onClick={openPend} className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-left text-xs text-red-200"><span>{alerts.join(' · ')}</span><span className="shrink-0 text-red-300">Ver →</span></button>}
+    <div className="my-3 grid grid-cols-3 gap-2">{([['falta', 'Faltan', RED], ['pedida', 'Pedidas', AMBER], ['hecha', 'Hechas', GREEN]] as const).map(([k, l, c]) => <button key={k} onClick={() => setF(f === k ? 'todas' : k)} className="frost-card p-3 text-left" style={f === k ? { borderColor: c } : undefined}><p className="text-[11px] text-slate-400">{l}</p><p className="text-2xl font-medium" style={{ color: c }}>{n(k)}</p></button>)}</div>
+    <div className="relative"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar placa o responsable…" className={inp} style={{ paddingLeft: 40 }} /></div>
+    <div className="mt-3 flex flex-col gap-2">{rows.map(({ v, last, r, st }) => <div key={v.id} className={`frost-card flex flex-wrap items-center justify-between gap-3 p-3.5 ${st === 'hecha' ? 'opacity-60' : ''}`}>
+      <div className="min-w-0"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}{st === 'pedida' && r && <span style={{ color: AMBER }}> · pedida el {fmtD(r.requested_at)}</span>}{st === 'hecha' && <span style={{ color: GREEN }}> · hecha</span>}</p></div>
+      <div className="flex items-center gap-3">{st === 'hecha' ? (last && <button onClick={() => openRep(last.id)} className="text-xs text-slate-400 underline hover:text-white">Ver informe</button>) : <><button onClick={() => toggle(v, !!r)} className="text-xs text-slate-400 underline hover:text-white">{r ? 'Quitar pedido' : 'Ya la pedí'}</button><button onClick={() => onStart(v, 'inspeccion')} className="h-9 rounded-lg px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Inspeccionar</button></>}</div></div>)}
+      {!rows.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay camionetas con ese filtro.</p>}</div>
+    {vs.length > quin.length && <p className="mt-3 text-center text-[11px] text-slate-600">No incluye {vs.length - quin.length} camioneta(s) con inspección mensual o sin recordatorio. Están en Camionetas.</p>}
+  </div>
+}
+
+function TallerTab({ vs, wk, openWork, onNew, onReload }: { vs: V[]; wk: Work[]; openWork: (id: string) => void; onNew: (v: V) => void; onReload: () => void }) {
   const [month, setMonth] = useState(today().slice(0, 7))
   const [wt, setWt] = useState<'mes' | '0' | '1' | '2' | '3' | 'act'>('mes')
-  const [rf, setRf] = useState<'todas' | 'falta' | 'pedida' | 'hecha'>('todas')
   const [ex, setEx] = useState<Work | null>(null)
-  const cur = period()
   const vOf = (id: string) => vs.find(x => x.id === id)
   const mine = wk.filter(w => vOf(w.vehicle_id))
   const t0 = new Date(today() + 'T00:00:00'), s0 = new Date(t0), e0 = new Date(t0)
   s0.setDate(t0.getDate() - ((t0.getDay() + 6) % 7)); e0.setDate(s0.getDate() + 6)
   const inMonth = mine.filter(w => w.entry_date.slice(0, 7) === month)
   const list = wt === 'act' ? mine.filter(w => w.entry_date >= ymd(s0) && w.entry_date <= ymd(e0)) : wt === 'mes' ? inMonth : inMonth.filter(w => Math.min(3, Math.floor((+w.entry_date.slice(8, 10) - 1) / 7)) === +wt)
-  const ord = { falta: 0, pedida: 1, hecha: 2 }
-  const quin = vs.filter(v => (v.insp_freq ?? 'quincenal') === 'quincenal')
-  const rows = quin.map(v => { const last = ins.find(x => x.vehicle_id === v.id && x.kind === 'inspeccion'); const r = reqs.find(x => x.vehicle_id === v.id && x.period === cur); const st: 'hecha' | 'pedida' | 'falta' = last && period(last.date) === cur ? 'hecha' : r ? 'pedida' : 'falta'; return { v, last, r, st } }).sort((a, b) => ord[a.st] - ord[b.st] || a.v.plate.localeCompare(b.v.plate))
-  const n = (k: string) => rows.filter(r => r.st === k).length
-  async function toggle(v: V, has: boolean) {
-    const q = has ? await supabase.from('insp_requests').delete().eq('vehicle_id', v.id).eq('period', cur) : await supabase.from('insp_requests').insert({ vehicle_id: v.id, period: cur, requested_by: who })
-    q.error ? alert(q.error.message) : onReload()
-  }
   const btn = 'h-8 rounded-lg border border-white/15 px-3 text-[11px] font-semibold text-slate-300 hover:bg-white/5'
   const mlabel = `${MES[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}`
   return <div>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['En taller ahora', mine.filter(w => !w.exit_date).length, AMBER], ['Ingresos del mes', inMonth.length, '#00d2ff'], ['Pendientes en rojo (alta)', obs.filter(o => o.priority === 'A' && vOf(o.vehicle_id)).length, RED], ['Ronda: hechas', `${n('hecha')} de ${rows.length}`, GREEN]].map(([l, x, c]) => <div key={l as string} className="frost-card p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{l}</p><p className="mt-2 text-2xl font-semibold" style={{ color: c as string }}>{x}</p></div>)}</div>
-
-    <div className="mt-8 flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-semibold text-white">Ingresos a taller</h3><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none" /></div>
+    <div className="grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">En taller ahora</p><p className="text-2xl font-medium" style={{ color: AMBER }}>{mine.filter(w => !w.exit_date).length}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Ingresos del mes</p><p className="text-2xl font-medium" style={{ color: CYAN }}>{inMonth.length}</p></div></div>
+    <select className={inp + ' mt-3'} value="" onChange={e => { const v = vs.find(x => x.id === e.target.value); if (v) onNew(v) }}><option value="" className="bg-[#111a2a]">+ Nuevo ingreso a taller: elegir camioneta…</option>{vs.map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name}</option>)}</select>
+    <div className="mt-6 flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-semibold text-white">Ingresos a taller</h3><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none" /></div>
     <div className="mt-3 flex flex-wrap gap-2">{([['mes', 'Mes'], ['0', 'Semana 1'], ['1', 'Semana 2'], ['2', 'Semana 3'], ['3', 'Semana 4'], ['act', 'Actual']] as const).map(([k, l]) => <button key={k} onClick={() => setWt(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${wt === k ? 'border-[#ff8a00] bg-[#ff8a00]/10 text-[#ffae47]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
     <p className="mt-2 text-[11px] text-slate-500">{wt === 'act' ? `Semana actual: del ${fmtD(ymd(s0))} al ${fmtD(ymd(e0))}` : wt === 'mes' ? mlabel : `Semana ${+wt + 1} de ${mlabel}: días ${['1 al 7', '8 al 14', '15 al 21', '22 al fin de mes'][+wt]}`}</p>
     <div className="mt-3 flex flex-col gap-2">{list.map(w => { const v = vOf(w.vehicle_id)!; const open = !w.exit_date; const d = dayDiff(w.entry_date, w.exit_date ?? today())
@@ -403,13 +431,7 @@ function Dash({ vs, ins, wk, reqs, obs, who, onReload, openRep, openWork, openHi
         {open && <button onClick={() => setEx(w)} className={btn}>Registrar salida</button>}<button onClick={() => openWork(w.id)} className={btn}>Informe</button></div> })}
       {!list.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay ingresos a taller en este período.</p>}</div>
 
-    <div className="mt-10"><h3 className="text-lg font-semibold text-white">Ronda de revisión de 15 días</h3><p className="mt-1 text-xs text-slate-500">{periodLabel(cur)}</p>{vs.length > quin.length && <p className="mt-1 text-[11px] text-slate-600">No incluye {vs.length - quin.length} camioneta(s) con inspección mensual o sin recordatorio.</p>}</div>
-    <div className="mt-3 flex flex-wrap gap-2">{([['todas', `Todas (${rows.length})`], ['falta', `Faltan pedir (${n('falta')})`], ['pedida', `Pedidas (${n('pedida')})`], ['hecha', `Hechas (${n('hecha')})`]] as const).map(([k, l]) => <button key={k} onClick={() => setRf(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${rf === k ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
-    <div className="mt-3 flex flex-col gap-2">{rows.filter(r => rf === 'todas' || r.st === rf).map(({ v, last, r, st }) => { const col = st === 'hecha' ? GREEN : st === 'pedida' ? AMBER : RED; const lw = wk.find(w => w.vehicle_id === v.id)
-      return <div key={v.id} className="frost-card flex flex-wrap items-center gap-3 p-4"><span className="size-2.5 shrink-0 rounded-full" style={{ background: col }} /><div className="min-w-0 flex-1"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}{st === 'pedida' && r && ` · pedida el ${fmtD(r.requested_at)}${r.requested_by ? ' por ' + r.requested_by : ''}`}</p></div>
-        <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: col + '22', color: col }}>{st === 'hecha' ? 'Hecha' : st === 'pedida' ? 'Pedida' : 'Falta pedir'}</span>
-        {st !== 'hecha' && <button onClick={() => toggle(v, !!r)} className={btn}>{r ? 'Quitar' : 'Ya la pedí'}</button>}{last && <button onClick={() => openRep(last.id)} className={btn}>Inspección</button>}{lw && <button onClick={() => openWork(lw.id)} className={btn}>Taller</button>}<button onClick={() => openHist(v)} className={btn}>Historial</button></div> })}
-      {!vs.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay vehículos con ese filtro.</p>}</div>
+    
     {ex && <WorkEdit w={ex} closing onClose={() => setEx(null)} onDone={onReload} />}
   </div>
 }
@@ -421,7 +443,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const [owners, setOwners] = useState<Owner[]>([])
   const [wk, setWk] = useState<Work[]>([])
   const [reqs, setReqs] = useState<Req[]>([])
-  const [tab, setTab] = useState<'panel' | 'veh'>('panel')
+  const [tab, setTab] = useState<'hoy' | 'veh' | 'taller' | 'inf'>('hoy')
   const [wfull, setWfull] = useState<Work | null>(null)
   const [scr, setScr] = useState<'list' | 'form' | 'hist' | 'rep' | 'matrix' | 'pend' | 'wform' | 'work'>('list')
   const [cur, setCur] = useState<V | null>(null)
@@ -480,14 +502,18 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const areas = [...new Set(vs.map(v => v.area).filter(Boolean))].sort()
   const words = plain(q).split(/\s+/).filter(Boolean)
   const shown = vs.filter(v => (!area || v.area === area) && (!words.length || words.every(w => plain(`${v.plate} ${v.driver} ${v.name} ${v.area}`).includes(w))))
-  const open = obs.filter(o => shown.some(v => v.id === o.vehicle_id))
+  const openAll = obs.filter(o => vs.some(v => v.id === o.vehicle_id))
+  const cp = period()
+  const nextV = (excl?: string) => vs.filter(v => v.id !== excl && (v.insp_freq ?? 'quincenal') === 'quincenal' && !ins.some(x => x.vehicle_id === v.id && x.kind === 'inspeccion' && period(x.date) === cp)).sort((a, b) => Number(reqs.some(r => r.vehicle_id === b.id && r.period === cp)) - Number(reqs.some(r => r.vehicle_id === a.id && r.period === cp)) || a.plate.localeCompare(b.plate))[0]
+  const nv = scr === 'rep' && full?.kind === 'inspeccion' ? nextV(full.vehicle_id) : undefined
+  const otherOverdue = vs.filter(v => (v.insp_freq ?? 'quincenal') !== 'quincenal' && status(v.id).c === RED).length
 
   if (scr === 'form' && cur) return <Form v={cur} kind={kind} who={who} onClose={() => setScr('list')} onDone={id => { load(); openRep(id) }} />
-  if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} />
+  if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} onNext={nv ? () => start(nv, 'inspeccion') : undefined} nextLabel={nv ? `Siguiente: ${nv.plate} →` : undefined} />
   if (scr === 'wform' && cur) return <WorkForm v={cur} who={who} obs={obs} onClose={() => setScr('list')} onDone={id => { load(); openWorkId(id) }} />
   if (scr === 'work' && wfull) return <WorkReport w={wfull} v={vOf(wfull.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onChanged={() => { load(); openWorkId(wfull.id) }} onDelete={isAdmin ? () => delWork(wfull) : undefined} />
-  if (scr === 'matrix') return <Matrix vs={shown} ins={ins} onBack={() => setScr('list')} />
-  if (scr === 'pend') return <Panel obs={obs} vs={shown} area="" who={who} onBack={() => setScr('list')} onDone={load} />
+  if (scr === 'matrix') return <Matrix vs={vs} ins={ins} onBack={() => setScr('list')} />
+  if (scr === 'pend') return <Panel obs={obs} vs={vs} area="" who={who} onBack={() => setScr('list')} onDone={load} />
   if (scr === 'hist' && cur) return <div className="no-print"><button onClick={() => { setCur(null); setScr('list') }} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
     <h2 className="text-2xl font-semibold text-white">Historial · {cur.name} <span className="font-mono text-base text-slate-400">{cur.plate}</span></h2>
     <p className="mt-1 text-xs text-slate-500">{cur.driver}{cur.area && ` · ${cur.area}`}{cur.km_next != null && ` · Próximo mantenimiento a los ${cur.km_next.toLocaleString('es-BO')} km (cada ${(cur.km_interval ?? 8000).toLocaleString('es-BO')} km)`}</p>
@@ -498,30 +524,36 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
       return <button key={x.id} onClick={() => openRep(x.id)} className="flex w-full items-center justify-between gap-3 p-4 text-left text-sm hover:bg-white/[0.03]"><span><b className="text-white">{fmtD(x.date)}</b> · <span className="capitalize">{KN[x.kind]}</span><span className="block text-xs text-slate-500">{x.inspector} · {(x.km ?? 0).toLocaleString('es-BO')} km</span></span><span className="flex items-center gap-3 text-xs">{m > 0 && <span className="text-red-300">{m} en Malo</span>}{r > 0 && <span className="text-amber-300">{r} en Regular</span>}{pn > 0 && <span className="text-yellow-200">{pn} pendiente{pn === 1 ? '' : 's'}</span>}{m + r + pn === 0 && <span className="text-[#c6ff00]">Sin fallas</span>}<FileText className="size-4 text-slate-500" /></span></button> })}
       {!ins.some(x => x.vehicle_id === cur.id) && <p className="p-8 text-center text-sm text-slate-600">Sin registros todavía.</p>}</div></div>
 
-  const overdue = shown.filter(v => status(v.id).c === RED).length
+  const tabs = [['hoy', 'Hoy'], ['veh', 'Camionetas'], ['taller', 'Taller'], ['inf', 'Informes']] as const
   return <div className="no-print">
-    <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c6ff00]">Estado de la flota</p><h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Inspecciones de vehículos</h2><p className="mt-1 text-sm text-slate-500">Inspección cada 15 días · Taller y recepción cuando sea necesario</p></div>
-      <div className="flex flex-wrap gap-2"><button onClick={() => setScr('matrix')} className="flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-semibold text-slate-300 hover:bg-white/5"><FileText className="size-4" />Informe general</button>{isAdmin && <button onClick={() => setVm('new')} className="flex h-11 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar vehículo</button>}</div></div>
-    <button onClick={() => setScr('pend')} className="frost-card mb-4 flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left hover:border-white/20"><span className="text-sm font-semibold text-white">Pendientes por prioridad</span>{(['A', 'M', 'B'] as Pri[]).map(k => <span key={k} className="flex items-center gap-2 text-sm text-slate-300"><span className="size-3 rounded-full" style={{ background: PRI[k].c }} /><b className="text-white">{open.filter(o => o.priority === k).length}</b> {PRI[k].l.toLowerCase()}s</span>)}<span className="ml-auto text-xs text-slate-500">Ver panel →</span></button>
-    <div className="relative mb-4"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por placa, responsable o marca…" className={inp} style={{ paddingLeft: 40 }} /></div>
-    {!!areas.length && <div className="mb-4 flex flex-wrap gap-2">{['', ...areas].map(a => <button key={a || 'todas'} onClick={() => setArea(a)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${area === a ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{a || 'Todas'}</button>)}</div>}
-    {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste taller.sql y panel.sql en Supabase?</p>}
-    <div className="mb-5 flex gap-1 border-b border-white/[0.08]">{([['panel', 'Panel de flota'], ['veh', 'Vehículos']] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>)}</div>
-    {tab === 'panel' ? <><Dash vs={shown} ins={ins} wk={wk} reqs={reqs} obs={obs} who={who} onReload={load} openRep={id => { setCur(null); openRep(id) }} openWork={id => { setCur(null); openWorkId(id) }} openHist={v => { setCur(v); setScr('hist') }} /></> : <>
-    {overdue > 0 && <p className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{overdue} vehículo{overdue === 1 ? '' : 's'} con la inspección vencida o pendiente.</p>}
-    {(() => { const near = shown.filter(v => v.km_next != null && v.km_next - v.odometer <= 2000); const red = near.filter(v => v.km_next! - v.odometer <= 1000).length; return near.length > 0 && <p className="mb-5 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: (red ? RED : AMBER) + '55', background: (red ? RED : AMBER) + '14', color: red ? '#fca5a5' : '#fdba74' }}>{near.length} vehículo{near.length === 1 ? '' : 's'} con mantenimiento próximo o vencido (menos de 2.000 km){red ? ` · ${red} urgente${red === 1 ? '' : 's'}` : ''}.</p> })()}
-    {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">{q || area ? 'Sin resultados con ese filtro.' : <>No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</>}</p>}
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{shown.map(v => { const s = status(v.id); const m = s.l ? Object.values(s.l.items).filter((i: Item) => i.s === 'M').length : 0; const r = s.l ? Object.values(s.l.items).filter((i: Item) => i.s === 'R').length : 0
-      const left = v.km_next != null ? v.km_next - v.odometer : null; const mc = left == null ? '' : left <= 1000 ? RED : left <= 2000 ? AMBER : GREEN
-      const mo = obs.filter(o => o.vehicle_id === v.id)
-      return <div key={v.id} className="frost-card p-5"><div className="flex items-start justify-between gap-2"><div><h3 className="font-semibold text-white"><button onClick={() => { setCur(v); setScr('hist') }} className="text-left hover:underline">{v.name}</button></h3><p className="mt-0.5 text-xs text-slate-500">{v.driver}{v.area && ` · ${v.area}`}</p></div>{isAdmin && <button onClick={() => setVm(v)} aria-label="Editar" className="text-slate-600 hover:text-white"><Pencil className="size-4" /></button>}</div>
-        <div className="mt-3 flex items-center gap-2"><span className="inline-block rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[11px] font-semibold tracking-wider text-white">{v.plate}</span>{(['A', 'M', 'B'] as Pri[]).map(k => { const n = mo.filter(o => o.priority === k).length; return n > 0 && <span key={k} className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: PRI[k].c, color: k === 'M' ? '#000' : '#fff' }}>{n}</span> })}</div>
-        <p className="mt-4 flex items-center gap-2 text-xs font-semibold" style={{ color: s.c }}><span className="size-2 rounded-full" style={{ background: s.c }} />{s.t}</p>
-        {s.l && <p className="mt-1 text-[11px] text-slate-500">{m > 0 && <span className="text-red-300">{m} en Malo · </span>}{r > 0 && <span className="text-amber-300">{r} en Regular · </span>}{m + r === 0 && 'Sin fallas · '}{(s.l.km ?? 0).toLocaleString('es-BO')} km</p>}
-        {(left != null || isAdmin) && <p className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: left == null ? '#64748b' : mc }}><span className="size-1.5 rounded-full" style={{ background: left == null ? '#64748b' : mc }} />{left == null ? 'Sin mantenimiento configurado' : `Mantenimiento: ${left > 0 ? `faltan ${left.toLocaleString('es-BO')} km` : `pasado por ${Math.abs(left).toLocaleString('es-BO')} km`} · cada ${(v.km_interval ?? 8000).toLocaleString('es-BO')} km`}{isAdmin && <button onClick={() => setMt(v)} className="ml-auto text-slate-400 underline hover:text-white">Configurar</button>}</p>}
-        <div className="mt-4 grid grid-cols-3 gap-2"><button onClick={() => start(v, 'inspeccion')} className="flex h-10 items-center justify-center gap-1 rounded-xl text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><ClipboardCheck className="size-4" />Inspección</button><button onClick={() => { setCur(v); setScr('wform') }} className="h-10 rounded-xl border border-[#ff8a00]/40 bg-[#ff8a00]/10 text-xs font-semibold text-[#ffae47]">Taller</button><button onClick={() => start(v, 'recepcion')} className="h-10 rounded-xl border border-[#00d2ff]/40 bg-[#00d2ff]/10 text-xs font-semibold text-[#5fe3ff]">Recepción</button></div>
-        <div className="mt-3 flex items-center justify-center gap-4 text-xs text-slate-500"><button onClick={() => { setCur(v); setScr('hist') }} className="hover:text-white">Historial e informes</button>{isAdmin && <button onClick={() => setOwn(v)} className="hover:text-white">Cambiar dueño</button>}</div></div> })}</div>
-    </>}
+    <div className="mb-5"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c6ff00]">Flota</p><h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Inspecciones</h2></div>
+    {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste los archivos .sql en Supabase?</p>}
+    <div className="mb-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>)}</div>
+
+    {tab === 'hoy' && <Hoy vs={vs} ins={ins} reqs={reqs} obs={obs} wk={wk} who={who} otherOverdue={otherOverdue} onReload={load} openRep={id => { setCur(null); openRep(id) }} onStart={(v, k) => start(v, k)} openPend={() => setScr('pend')} />}
+
+    {tab === 'veh' && <div>
+      <div className="mb-3 flex items-center gap-2"><div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por placa, responsable o marca…" className={inp} style={{ paddingLeft: 40 }} /></div>{isAdmin && <button onClick={() => setVm('new')} className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar</button>}</div>
+      {!!areas.length && <div className="mb-4 flex flex-wrap gap-2">{['', ...areas].map(a => <button key={a || 'todas'} onClick={() => setArea(a)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${area === a ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{a || 'Todas'}</button>)}</div>}
+      {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">{q || area ? 'Sin resultados con ese filtro.' : <>No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</>}</p>}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{shown.map(v => { const s = status(v.id); const mo = obs.filter(o => o.vehicle_id === v.id)
+        const left = v.km_next != null ? v.km_next - v.odometer : null; const mc = left == null ? '' : left <= 1000 ? RED : AMBER
+        const items: [string, () => void][] = [['Ingreso a taller', () => { setCur(v); setScr('wform') }], ['Recepción', () => start(v, 'recepcion')], ['Historial e informes', () => { setCur(v); setScr('hist') }], ...(isAdmin ? ([['Cambiar dueño', () => setOwn(v)], ['Mantenimiento', () => setMt(v)], ['Editar vehículo', () => setVm(v)]] as [string, () => void][]) : [])]
+        return <div key={v.id} className="frost-card p-4"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}</p></div><div className="flex shrink-0 gap-1">{(['A', 'M', 'B'] as Pri[]).map(k => { const c = mo.filter(o => o.priority === k).length; return c > 0 && <span key={k} className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: PRI[k].c, color: k === 'M' ? '#000' : '#fff' }}>{c}</span> })}</div></div>
+          <p className="mt-3 flex items-center gap-2 text-xs font-semibold" style={{ color: s.c }}><span className="size-2 rounded-full" style={{ background: s.c }} />{s.t}</p>
+          {left != null && left <= 2000 && <p className="mt-1 text-[11px]" style={{ color: mc }}>Mantenimiento: {left > 0 ? `faltan ${left.toLocaleString('es-BO')} km` : `pasado por ${Math.abs(left).toLocaleString('es-BO')} km`}</p>}
+          <div className="mt-3 flex gap-2"><button onClick={() => start(v, 'inspeccion')} className="h-10 flex-1 rounded-xl text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Inspeccionar</button><Menu items={items} /></div></div> })}</div>
+    </div>}
+
+    {tab === 'taller' && <TallerTab vs={vs} wk={wk} openWork={id => { setCur(null); openWorkId(id) }} onNew={v => { setCur(v); setScr('wform') }} onReload={load} />}
+
+    {tab === 'inf' && <div className="flex flex-col gap-3">
+      <button onClick={() => setScr('pend')} className="frost-card flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left hover:border-white/20"><span className="text-sm font-semibold text-white">Pendientes por prioridad</span>{(['A', 'M', 'B'] as Pri[]).map(k => <span key={k} className="flex items-center gap-2 text-sm text-slate-300"><span className="size-3 rounded-full" style={{ background: PRI[k].c }} /><b className="text-white">{openAll.filter(o => o.priority === k).length}</b></span>)}<span className="ml-auto text-xs text-slate-500">Ver →</span></button>
+      <button onClick={() => setScr('matrix')} className="frost-card px-5 py-4 text-left text-sm font-semibold text-white hover:border-white/20">Informe general de inspecciones<span className="float-right text-xs font-normal text-slate-500">Ver e imprimir →</span></button>
+      <h3 className="mt-3 text-sm font-semibold text-white">Últimas inspecciones</h3>
+      <div className="frost-card divide-y divide-white/[0.06]">{ins.slice(0, 15).map(x => { const v = vOf(x.vehicle_id); return <button key={x.id} onClick={() => { setCur(null); openRep(x.id) }} className="flex w-full items-center justify-between gap-3 p-3.5 text-left text-sm hover:bg-white/[0.03]"><span><b className="font-mono text-white">{v?.plate ?? '—'}</b> · <span className="capitalize">{KN[x.kind]}</span><span className="block text-xs text-slate-500">{fmtD(x.date)} · {x.inspector}</span></span><FileText className="size-4 text-slate-500" /></button> })}{!ins.length && <p className="p-6 text-center text-sm text-slate-600">Aún no hay inspecciones.</p>}</div>
+    </div>}
+
     {vm && <VehForm v={vm === 'new' ? null : vm} onClose={() => setVm(null)} onDone={load} />}
     {own && <OwnerModal v={own} onClose={() => setOwn(null)} onDone={load} />}
     {mt && <MantModal v={mt} onClose={() => setMt(null)} onDone={load} />}

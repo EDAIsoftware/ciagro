@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import ProfileName from '@/components/profile-name'
+import AppShell from '@/components/app-shell'
 import Salidas from '@/components/salidas'
 import { balance, fetchDB, fmtBs, fmtL, vehicleStats } from '@/lib/store'
 
@@ -87,6 +86,7 @@ const Card = ({ title, href, open, children }: { title: string; href: string; op
 export default function ResumenPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [who, setWho] = useState('')
+  const [role, setRole] = useState('operador')
   const [mods, setMods] = useState<string[] | null>(null)
   const [d, setD] = useState<Data | null>(null)
 
@@ -97,7 +97,7 @@ export default function ResumenPage() {
   }, [])
   useEffect(() => {
     if (!session) return
-    supabase.from('profiles').select('full_name').eq('id', session.user.id).single().then(({ data }) => setWho(data?.full_name ?? ''))
+    supabase.from('profiles').select('full_name, role').eq('id', session.user.id).single().then(({ data }) => { setWho(data?.full_name ?? ''); setRole(data?.role ?? 'operador') })
     supabase.rpc('my_modules').then(({ data }) => setMods((data ?? []) as string[]))
   }, [session])
   useEffect(() => { if (mods) compute(mods).then(setD) }, [mods])
@@ -108,10 +108,8 @@ export default function ResumenPage() {
   if (!mods!.length) return wrap(<>Todavía no tienes módulos asignados.<br />Pide al administrador que te los asigne.</>)
   const x = d!
   const hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  return <main className="min-h-screen bg-[#0b0f17] text-slate-200">
-    <header className="flex h-[68px] items-center justify-between gap-3 border-b border-white/[0.07] px-5 sm:px-8"><a href="/" className="flex shrink-0 items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft className="size-4" /><span className="hidden sm:inline">Inicio</span></a><span className="truncate text-[10px] font-bold tracking-[0.2em] text-white">CIAGRO SRL · PANEL GENERAL</span>
-      <div className="flex min-w-0 items-center gap-4 text-xs text-slate-400"><ProfileName userId={session.user.id} name={who} fallback={session.user.email ?? ''} onSaved={setWho} /><button onClick={() => supabase.auth.signOut()} className="shrink-0 text-slate-500 hover:text-white">Salir</button></div></header>
-    <div className="mx-auto max-w-[1100px] p-4 sm:p-8">
+  return <AppShell active="resumen" email={session.user.email ?? ''} userId={session.user.id} mods={mods!} isAdmin={role === 'admin'} who={who} onWho={setWho}>
+    <div>
       <h1 className="text-2xl font-semibold text-white sm:text-3xl">Panel general</h1><p className="mt-1 text-sm capitalize text-slate-500">{hoy}</p>
       <div className="frost-card mt-5 p-4"><h2 className="mb-2 text-sm font-medium text-white">Atención hoy</h2>
         {x.alerts.map((a, i) => <a key={i} href={a.href} className="flex items-center gap-3 border-t border-white/[0.07] py-2 text-sm text-slate-200 hover:text-white"><span className="size-2 shrink-0 rounded-full" style={{ background: a.c }} />{a.t}</a>)}
@@ -123,5 +121,5 @@ export default function ResumenPage() {
         {x.prep?.map(p => <Card key={p.area} title={`Preparación de ${p.area.toLowerCase()}`} href="/preparacion" open="Abrir preparación"><Row l="Por hacer" v={p.por} c="#94a3b8" /><Row l="En proceso" v={p.proc} c={GREEN} /><Row l="Finalizados" v={p.fin} c={CYAN} /><Row l="Con problema" v={p.prob} c={RED} /></Card>)}
       </div>
       {mods!.includes('rutas') && <div className="mt-4"><Salidas /></div>}
-    </div></main>
+    </div></AppShell>
 }

@@ -407,6 +407,17 @@ function Hoy({ vs, ins, reqs, obs, wk, who, otherOverdue, onReload, openRep, onS
   </div>
 }
 
+function VehPicker({ vs, onPick }: { vs: V[]; onPick: (v: V) => void }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const words = plain(q).split(/\s+/).filter(Boolean)
+  const list = vs.filter(v => !words.length || words.every(w => plain(`${v.plate} ${v.name} ${v.driver} ${v.area}`).includes(w)))
+  return <div className="relative"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" />
+    <input value={q} onChange={e => { setQ(e.target.value); setOpen(true) }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} placeholder="+ Nuevo ingreso a taller: buscar por placa o responsable…" className={inp} style={{ paddingLeft: 40, paddingRight: 40 }} />
+    {q && <button type="button" aria-label="Borrar" onMouseDown={e => e.preventDefault()} onClick={() => setQ('')} className="absolute right-2 top-2.5 grid size-7 place-items-center rounded-full bg-white/10 text-base leading-none text-slate-200">×</button>}
+    {open && <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-white/10 bg-[#111a2a] shadow-xl">{list.map(v => <button type="button" key={v.id} onMouseDown={e => e.preventDefault()} onClick={() => { setQ(''); setOpen(false); onPick(v) }} className="block w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-white/5"><b className="font-mono text-white">{v.plate}</b> · {v.name}<span className="block text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}</span></button>)}{!list.length && <p className="px-4 py-3 text-sm text-slate-500">Sin resultados</p>}</div>}</div>
+}
+
 function TallerTab({ vs, wk, openWork, onNew, onReload }: { vs: V[]; wk: Work[]; openWork: (id: string) => void; onNew: (v: V) => void; onReload: () => void }) {
   const [month, setMonth] = useState(today().slice(0, 7))
   const [wt, setWt] = useState<'mes' | '0' | '1' | '2' | '3' | 'act'>('mes')
@@ -421,7 +432,7 @@ function TallerTab({ vs, wk, openWork, onNew, onReload }: { vs: V[]; wk: Work[];
   const mlabel = `${MES[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}`
   return <div>
     <div className="grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">En taller ahora</p><p className="text-2xl font-medium" style={{ color: AMBER }}>{mine.filter(w => !w.exit_date).length}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Ingresos del mes</p><p className="text-2xl font-medium" style={{ color: CYAN }}>{inMonth.length}</p></div></div>
-    <select className={inp + ' mt-3'} value="" onChange={e => { const v = vs.find(x => x.id === e.target.value); if (v) onNew(v) }}><option value="" className="bg-[#111a2a]">+ Nuevo ingreso a taller: elegir camioneta…</option>{vs.map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name}</option>)}</select>
+    <div className="mt-3"><VehPicker vs={vs} onPick={onNew} /></div>
     <div className="mt-6 flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-semibold text-white">Ingresos a taller</h3><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none" /></div>
     <div className="mt-3 flex flex-wrap gap-2">{([['mes', 'Mes'], ['0', 'Semana 1'], ['1', 'Semana 2'], ['2', 'Semana 3'], ['3', 'Semana 4'], ['act', 'Actual']] as const).map(([k, l]) => <button key={k} onClick={() => setWt(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${wt === k ? 'border-[#ff8a00] bg-[#ff8a00]/10 text-[#ffae47]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
     <p className="mt-2 text-[11px] text-slate-500">{wt === 'act' ? `Semana actual: del ${fmtD(ymd(s0))} al ${fmtD(ymd(e0))}` : wt === 'mes' ? mlabel : `Semana ${+wt + 1} de ${mlabel}: días ${['1 al 7', '8 al 14', '15 al 21', '22 al fin de mes'][+wt]}`}</p>

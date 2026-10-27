@@ -191,7 +191,7 @@ export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs:
   const cell = 'border border-gray-400 px-1 py-0.5 align-top'
   useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SRL`; return () => { document.title = t } }, [r.number])
   const rows = [...visits].sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
-  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.rs-wrap{overflow:visible!important;padding:10mm!important;border-radius:0!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:8.5px!important}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
+  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-wrap{overflow:visible!important;padding:10mm!important;border-radius:0!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:8.5px!important}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
     <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-5 text-[11px] text-black">
       <div className="mb-3 flex items-end justify-between border-b-2 border-black pb-2"><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p><h1 className="text-base font-bold uppercase">Ruta de trabajo</h1><p className="text-sm">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
@@ -204,10 +204,11 @@ export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs:
     </div></div>
 }
 
+const shortName = (n: string) => { const w = n.trim().split(/\s+/); return (w[0] + (w[1] ? ' ' + w[1][0] + '.' : '')).toUpperCase() }
 const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const cl = (v: unknown, st = 's', merge = 0) => `<Cell ss:StyleID="${st}"${merge ? ` ss:MergeAcross="${merge}"` : ''}><Data ss:Type="String">${esc(v)}</Data></Cell>`
 const rw = (cells: string[]) => `<Row>${cells.join('')}</Row>`
-function weekXml(week: number, year: number, routes: Route[], techs: Tech[], vehs: Veh[], reqs: Req[], tState: (t: Tech) => { l: string }, tName: (id?: string | null) => string): string {
+function weekXml(week: number, year: number, routes: Route[], techs: Tech[], vehs: Veh[], reqs: Req[], tState: (t: Tech) => { l: string }, tName: (id?: string | null) => string, lite = false): string {
   const bd = ['Left', 'Right', 'Top', 'Bottom'].map(p => `<Border ss:Position="${p}" ss:LineStyle="Continuous" ss:Weight="1"/>`).join('')
   const st = (id: string, extra = '') => `<Style ss:ID="${id}"><Alignment ss:Vertical="Top" ss:WrapText="1"${id === 'h' || id.startsWith('p') ? ' ss:Horizontal="Center"' : ''}/><Borders>${bd}</Borders>${extra}</Style>`
   const styles = `<Styles><Style ss:ID="Default"><Font ss:FontName="Calibri" ss:Size="10"/></Style>${st('s')}${st('b', '<Font ss:Bold="1"/>')}${st('h', '<Font ss:Bold="1"/><Interior ss:Color="#D9D9D9" ss:Pattern="Solid"/>')}${st('p1', '<Font ss:Bold="1"/><Interior ss:Color="#FF0000" ss:Pattern="Solid"/>')}${st('p2', '<Font ss:Bold="1"/><Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>')}${st('p3', '<Font ss:Bold="1"/><Interior ss:Color="#34A853" ss:Pattern="Solid"/>')}<Style ss:ID="t"><Font ss:Bold="1" ss:Size="14"/></Style><Style ss:ID="f"><Alignment ss:Horizontal="Center"/><Font ss:Bold="1"/></Style></Styles>`
@@ -225,9 +226,9 @@ function weekXml(week: number, year: number, routes: Route[], techs: Tech[], veh
       rw([cl('Prioridad: 1 = Alta / 2 = Normal / 3 = Baja', 't')]), rw(head.map(h => cl(h, 'h')))]
     for (let i = 0; i < Math.max(6, vs.length); i++) { const q = vs[i]; rows.push(rw(q ? [cl(i + 1), cl(q.client), cl(q.brand), cl(q.machine), cl(q.model), cl(fd(q.call_date)), cl(q.zone), cl(q.contact), cl(q.meeting_point), cl(q.job), cl(q.warranty ? 'SI' : 'NO'), cl(q.credit ? 'SI' : 'NO'), cl(q.priority, 'p' + q.priority), cl(q.amount ?? '-'), cl(q.paid_date ? fd(q.paid_date) : '-'), cl(fd(q.visit_date))] : [cl(i + 1), ...Array.from({ length: 15 }, () => cl(''))])) }
     rows.push(rw([]), rw([cl(''), ...FIRMAS.flatMap(([n]) => [cl(n, 'f', 3), cl('')])]), rw([cl(''), ...FIRMAS.flatMap(([, c]) => [cl(c, 'f', 3), cl('')])]))
-    return sheet(String(r.number), [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
+    return sheet(`${r.number}-${shortName(tName(r.tech_id))}`, [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
   }
-  return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${rrhh}${car}${routes.map(route).join('')}</Workbook>`
+  return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${lite ? '' : rrhh + car}${routes.map(route).join('')}</Workbook>`
 }
 function download(name: string, text: string) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/vnd.ms-excel;charset=utf-8' })); a.download = name; a.click() }
 
@@ -366,6 +367,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         {route.status === 'cerrada' && isAdmin && <button onClick={() => setStatus(route, 'confirmada', 'Reabrió la ruta')} className={btn}>Reabrir</button>}
         {route.status !== 'cerrada' && <button onClick={() => setScr('rform')} className={btn}><Pencil className="mr-1 inline size-3.5" />Editar</button>}
         <button onClick={() => setScr('sheet')} className={btn}><Printer className="mr-1 inline size-3.5" />Ver hoja / imprimir</button>
+        <button onClick={() => download(`RUTA ${route.number}.xml`, weekXml(route.week, route.year, [route], techs, vehs, reqs, t => techState(t), tName, true))} className={btn}>Descargar en Excel</button>
         <button onClick={async () => { const { error } = await supabase.from('rt_print_jobs').insert({ route_id: route.id, requested_by_name: who }); alert(error ? error.message : 'Enviada a la impresora de la oficina. Sale en unos segundos si la computadora de impresión está encendida.') }} className={btn}>Enviar a la impresora de la oficina</button>
         {isAdmin && <button onClick={() => delRoute(route)} className="h-9 rounded-lg border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}
       </div>

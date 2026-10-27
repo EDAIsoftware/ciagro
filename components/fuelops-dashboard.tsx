@@ -136,6 +136,7 @@ export default function FuelOpsDashboard() {
   useEffect(() => { try { if (localStorage.getItem('edai-estacion') === '1' && !location.search.includes('normal')) location.replace('/rutas/impresion') } catch { /* sin acceso */ } }, [])
   const canRutas = !!mods?.includes('rutas')
   const canPrep = !!mods && (mods.includes('tractores') || mods.includes('implementos'))
+  useEffect(() => { if (mods && mods.length && !mods.includes('combustible')) window.location.replace('/resumen') }, [mods])
   const [who, setWho] = useState('')
   const [loadErr, setLoadErr] = useState('')
   const isAdmin = role === 'admin'
@@ -158,7 +159,7 @@ export default function FuelOpsDashboard() {
   const stats = useMemo(() => (db ? Object.fromEntries(db.vehicles.map(v => [v.id, vehicleStats(db, v.id, month)])) : {}), [db, month])
   const rep = useMemo(() => (db ? equipmentReport(db, month) : []), [db, month])
   if (session === null) return <Login />
-  if (mods && !mods.includes('combustible')) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] p-6 text-center text-sm text-slate-400"><div>No tienes acceso al control de combustible.<br />{mods.length ? 'Entra a lo que tienes asignado:' : 'Pide al administrador que te asigne un módulo.'}<div className="mt-3 flex flex-col gap-2">{[['inspecciones', '/inspecciones', 'Inspecciones y taller'], ['rutas', '/rutas', 'Rutas de servicio'], ['tractores', '/preparacion', 'Preparación'], ['implementos', '/preparacion', 'Preparación']].filter(([m], i, a) => mods.includes(m) && a.findIndex(z => z[1] === a[i][1] && mods.includes(z[0])) === i).map(([, h, l]) => <a key={h} href={h} className="text-[#c6ff00] underline">{l}</a>)}{mods.length > 0 && <a href="/resumen" className="text-[#c6ff00] underline">Panel general</a>}</div><button onClick={() => supabase.auth.signOut()} className="mt-4 text-xs text-slate-500 underline">Cerrar sesión</button></div></main>
+  if (mods && !mods.includes('combustible')) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] p-6 text-center text-sm text-slate-400"><div>{mods.length ? 'Abriendo tu panel…' : <>Todavía no tienes módulos asignados.<br />Pide al administrador que te los asigne.<br /><button onClick={() => supabase.auth.signOut()} className="mt-4 text-xs text-slate-500 underline">Cerrar sesión</button></>}</div></main>
   if (loadErr) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] p-6 text-center text-sm text-red-300">No se pudo cargar la base de datos: {loadErr}</main>
   if (!db) return <main className="grid min-h-screen place-items-center bg-[#0b0f17] text-sm text-slate-500">Cargando EDAI FuelOps…</main>
 

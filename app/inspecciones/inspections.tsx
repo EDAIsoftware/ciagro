@@ -183,17 +183,43 @@ function Form({ v, kind, who, onClose, onDone }: { v: V; kind: Kind; who: string
   </div>
 }
 
-function Report({ i, v, onBack, onDelete, onNext, nextLabel }: { i: Insp; v?: V; onBack: () => void; onDelete?: () => void; onNext?: () => void; nextLabel?: string }) {
+function SignModal({ i, v, onClose, onDone }: { i: Insp; v?: V; onClose: () => void; onDone: () => void }) {
+  const [dlv, setDlv] = useState(v?.driver ?? i.driver ?? '')
+  const [rcv, setRcv] = useState('')
+  const [sig, setSig] = useState<Record<string, string>>({})
+  const [err, setErr] = useState('')
+  async function save() {
+    if (!dlv.trim() || !rcv.trim() || !sig.control || !sig.resp) return setErr('Faltan los nombres o las dos firmas.')
+    const { data, error } = await supabase.from('inspections').update({ signatures: { control: { name: dlv.trim(), img: sig.control }, resp: { name: rcv.trim(), img: sig.resp } }, extra: { ...(i.extra ?? {}), entrega: '1', entrega_de: dlv.trim(), entrega_a: rcv.trim() } }).eq('id', i.id).select('id')
+    if (error) return setErr(error.message)
+    if (!data?.length) return setErr('No se pudo agregar: esta inspección ya tiene firmas o no tienes permiso.')
+    onDone(); onClose()
+  }
+  return <div className="no-print fixed inset-0 z-[60] flex items-end justify-center bg-[#05070c]/80 backdrop-blur-sm sm:items-center sm:p-6"><div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#111a2a] sm:rounded-2xl">
+    <div className="flex items-center justify-between border-b border-white/[0.07] p-5"><div><h2 className="text-lg font-semibold text-white">Firmas de entrega</h2><p className="mt-1 text-xs text-slate-500">{v?.plate} · se agregan a esta inspección</p></div><button onClick={onClose} aria-label="Cerrar" className="text-slate-500 hover:text-white"><X className="size-5" /></button></div>
+    <div className="flex flex-col gap-5 p-5">
+      <div><Lab t="Quien entrega"><input className={inp} value={dlv} onChange={e => setDlv(e.target.value)} /></Lab><p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Firma</p><SigPad onChange={d => setSig(o => ({ ...o, control: d }))} /></div>
+      <div><Lab t="Quien recibe"><input className={inp} value={rcv} onChange={e => setRcv(e.target.value)} placeholder="Nombre completo" /></Lab><p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Firma</p><SigPad onChange={d => setSig(o => ({ ...o, resp: d }))} /></div>
+      {err && <p className="text-xs text-red-300">{err}</p>}
+      <p className="text-[11px] text-slate-500">Las firmas se pueden agregar una sola vez; después la inspección queda cerrada.</p>
+      <div className="flex justify-end gap-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar firmas</button></div>
+    </div></div></div>
+}
+
+function Report({ i, v, onBack, onDelete, onNext, nextLabel, onSigned }: { i: Insp; v?: V; onBack: () => void; onDelete?: () => void; onNext?: () => void; nextLabel?: string; onSigned?: () => void }) {
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [obs, setObs] = useState<Obs[]>([])
+  const [sg, setSg] = useState(false)
   const groups = i.kind === 'inspeccion' ? INSP : i.kind === 'taller' ? TALLER : RECEP
   useEffect(() => { (async () => { const { data: ob } = await supabase.from('insp_observations').select('*').eq('inspection_id', i.id); const list = ((ob ?? []) as Obs[]).sort((x, y) => 'AMB'.indexOf(x.priority) - 'AMB'.indexOf(y.priority)); setObs(list); const ps = [...itemPaths(i), ...(list.map(o => o.photo).filter(Boolean) as string[])]; if (ps.length) { const { data } = await supabase.storage.from(BUCKET).createSignedUrls(ps, 3600); if (data) setUrls(Object.fromEntries(data.map(d => [d.path ?? '', d.signedUrl]))) } })() }, [i])
   const row = (a: string, b?: string) => <div className="flex gap-2 border-b border-gray-300 py-1"><span className="w-40 shrink-0 font-semibold">{a}</span><span>{b || '—'}</span></div>
   return <div>
     <div className="no-print mb-4 flex flex-wrap items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
+      {i.kind === 'inspeccion' && !i.extra?.entrega && onSigned && <button onClick={() => setSg(true)} className="flex h-10 items-center rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 hover:bg-white/5">Agregar firmas de entrega</button>}
       {onNext && <button onClick={onNext} className="flex h-10 items-center rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>{nextLabel}</button>}
       {onDelete && <button onClick={onDelete} className="flex h-10 items-center gap-1.5 rounded-xl border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="size-4" />Eliminar</button>}
       <button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
+    {sg && <SignModal i={i} v={v} onClose={() => setSg(false)} onDone={() => onSigned?.()} />}
     <div className="mx-auto max-w-4xl rounded-lg bg-white p-6 text-[12px] text-black sm:p-10">
       <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><div><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p></div><h1 className="text-right text-base font-bold uppercase">Check list de {KN[i.kind]} de vehículo{i.extra?.entrega ? ' · ENTREGA' : ''}</h1></div>
       <div className="grid gap-x-6 sm:grid-cols-2">{row('Fecha', fmtD(i.date))}{row('Lugar', i.place)}{row('Placa', v?.plate)}{row('Vehículo', v?.name)}{row('Conductor', i.driver)}{row('Kilometraje', i.km?.toLocaleString('es-BO') + ' km')}{i.fuel_level != null && row('Combustible', LV[i.fuel_level])}{row('Inspector', i.inspector)}{i.extra?.entrega && <>{row('Entrega de', i.extra.entrega_de)}{row('Entrega a', i.extra.entrega_a)}</>}{i.kind === 'taller' && <>{row('Marca', v?.name)}{row('Modelo (año)', v?.year)}{row('Chasis', v?.chassis)}{row('Km próx. mantenimiento', i.extra.km_next ? Number(i.extra.km_next).toLocaleString('es-BO') + ' km' : '')}{row('Km faltantes', i.extra.km_next ? (Number(i.extra.km_next) - i.km).toLocaleString('es-BO') + ' km' : '')}</>}
@@ -526,7 +552,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const otherOverdue = vs.filter(v => (v.insp_freq ?? 'quincenal') !== 'quincenal' && status(v.id).c === RED).length
 
   if (scr === 'form' && cur) return <Form v={cur} kind={kind} who={who} onClose={() => setScr('list')} onDone={id => { load(); openRep(id) }} />
-  if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} onNext={nv ? () => start(nv, 'inspeccion') : undefined} nextLabel={nv ? `Siguiente: ${nv.plate} →` : undefined} />
+  if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} onNext={nv ? () => start(nv, 'inspeccion') : undefined} nextLabel={nv ? `Siguiente: ${nv.plate} →` : undefined} onSigned={() => openRep(full.id)} />
   if (scr === 'wform' && cur) return <WorkForm v={cur} who={who} obs={obs} onClose={() => setScr('list')} onDone={id => { load(); openWorkId(id) }} />
   if (scr === 'work' && wfull) return <WorkReport w={wfull} v={vOf(wfull.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onChanged={() => { load(); openWorkId(wfull.id) }} onDelete={isAdmin ? () => delWork(wfull) : undefined} />
   if (scr === 'matrix') return <Matrix vs={vs} ins={ins} onBack={() => setScr('list')} />

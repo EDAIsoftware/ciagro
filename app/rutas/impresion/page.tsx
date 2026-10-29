@@ -75,7 +75,7 @@ export default function EstacionImpresion() {
       <div className="mt-4 flex flex-wrap justify-center gap-2"><button onClick={check} className={btn}>Revisar la cola ahora</button><button onClick={() => setTest(true)} className={btn}>Imprimir página de prueba</button><button onClick={copy} className={btn}>Copiar diagnóstico</button></div>
       <p className="mt-4 text-center text-[11px] text-slate-600">Deja esta ventana abierta y la computadora encendida. Revisa la cola cada 8 segundos.</p>
     </div>
-    {test && <div className="mt-6 bg-white p-10 text-black"><h1 className="text-xl font-bold">CIAGRO SRL · Prueba de impresión</h1><p className="mt-2">{new Date().toLocaleString('es-BO')}</p></div>}
+    {test && <div className="mt-6 bg-white p-10 text-black"><h1 className="text-xl font-bold">CIAGRO SA · Prueba de impresión</h1><p className="mt-2">{new Date().toLocaleString('es-BO')}</p></div>}
     {job && <div className="mt-6"><RouteSheet r={job.route} techs={job.techs} veh={job.veh} visits={job.visits} onBack={() => {}} /></div>}
   </main>
 }

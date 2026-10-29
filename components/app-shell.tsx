@@ -26,7 +26,7 @@ export default function AppShell({ active, email, userId, mods, isAdmin, who, on
     </aside>
     {open && <div className="no-print fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setOpen(false)} />}
     <div className="lg:pl-64">
-      <header className="no-print flex h-[56px] items-center border-b border-white/[0.07] px-4 lg:hidden"><button onClick={() => setOpen(true)} aria-label="Abrir menú" className="text-slate-400"><Menu className="size-5" /></button><span className="ml-3 text-[10px] font-bold tracking-[0.2em] text-white">CIAGRO SRL</span></header>
+      <header className="no-print flex h-[56px] items-center border-b border-white/[0.07] px-4 lg:hidden"><button onClick={() => setOpen(true)} aria-label="Abrir menú" className="text-slate-400"><Menu className="size-5" /></button><span className="ml-3 text-[10px] font-bold tracking-[0.2em] text-white">CIAGRO SA</span></header>
       <div className="shell-body mx-auto max-w-[1200px] p-4 sm:p-8">{children}</div>
     </div>
   </main>

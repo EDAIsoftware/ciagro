@@ -261,7 +261,7 @@ function Report({ i, v, onBack, onDelete, onNext, nextLabel, onSigned }: { i: In
     {sg && <SignModal i={i} v={v} onClose={() => setSg(false)} onDone={() => onSigned?.()} />}
     {ed && <EditInsp i={i} onClose={() => setEd(false)} onDone={() => onSigned?.()} />}
     <div className="mx-auto max-w-4xl rounded-lg bg-white p-6 text-[12px] text-black sm:p-10">
-      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><div><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p></div><h1 className="text-right text-base font-bold uppercase">Check list de {KN[i.kind]} de vehículo{i.extra?.entrega ? ' · ENTREGA' : ''}</h1></div>
+      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><div><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SA</p></div><h1 className="text-right text-base font-bold uppercase">Check list de {KN[i.kind]} de vehículo{i.extra?.entrega ? ' · ENTREGA' : ''}</h1></div>
       <div className="grid gap-x-6 sm:grid-cols-2">{row('Fecha', fmtD(i.date))}{row('Lugar', i.place)}{row('Placa', v?.plate)}{row('Vehículo', v?.name)}{row('Conductor', i.driver)}{row('Kilometraje', i.km?.toLocaleString('es-BO') + ' km')}{i.fuel_level != null && row('Combustible', LV[i.fuel_level])}{row('Inspector', i.inspector)}{i.extra?.entrega && <>{row('Entrega de', i.extra.entrega_de)}{row('Entrega a', i.extra.entrega_a)}</>}{i.kind === 'taller' && <>{row('Marca', v?.name)}{row('Modelo (año)', v?.year)}{row('Chasis', v?.chassis)}{row('Km próx. mantenimiento', i.extra.km_next ? Number(i.extra.km_next).toLocaleString('es-BO') + ' km' : '')}{row('Km faltantes', i.extra.km_next ? (Number(i.extra.km_next) - i.km).toLocaleString('es-BO') + ' km' : '')}</>}
         {i.kind === 'recepcion' && <>{row('Tipo de vehículo', i.extra.tipo)}{row('N° de pasajeros', i.extra.pasajeros)}{row('N° de interno', i.extra.interno)}{row('Área', v?.area)}</>}</div>
       <p className="mt-3 text-[10px]">B = Bueno · R = Regular · M = Malo · N/T = No tiene</p>
@@ -275,13 +275,13 @@ function Report({ i, v, onBack, onDelete, onNext, nextLabel, onSigned }: { i: In
       {!!i.photos?.length && <div className="break-inside-avoid mt-4"><p className="mb-2 font-semibold">Registro fotográfico</p><div className="grid grid-cols-3 gap-2">{i.photos.map(f => <figure key={f.path}><img src={urls[f.path]} alt={f.label} className="aspect-[4/3] w-full rounded object-cover" /><figcaption className="text-[10px]">{f.label}</figcaption></figure>)}</div></div>}
       {Object.entries(i.items).some(([, x]) => x.photo) && <div className="break-inside-avoid mt-4"><p className="mb-2 font-semibold">Fotos de fallas</p><div className="grid grid-cols-3 gap-2">{Object.entries(i.items).filter(([, x]) => x.photo).map(([k, x]) => <figure key={k}><img src={urls[x.photo!]} alt={k} className="aspect-[4/3] w-full rounded object-cover" /><figcaption className="text-[10px]">{k}: {x.note}</figcaption></figure>)}</div></div>}
       {(i.kind === 'recepcion' || i.extra?.entrega) && i.signatures && <div className="break-inside-avoid mt-8 grid grid-cols-2 gap-10 text-center">{(i.extra?.entrega ? [['control', 'Quien entrega'], ['resp', 'Quien recibe']] : [['control', 'Responsable del control · Dpto. Servicios'], ['resp', 'Responsable del vehículo']]).map(([k, t]) => <div key={k}>{i.signatures![k]?.img && <img src={i.signatures![k].img} alt="Firma" className="mx-auto h-16" />}<div className="border-t border-black pt-1 font-semibold">{i.signatures![k]?.name}</div><div className="text-[10px]">{t}</div></div>)}</div>}
-      <p className="mt-6 text-right text-[9px] text-gray-500">Registrado el {new Date(i.created_at).toLocaleString('es-BO')} · CIAGRO SRL</p>
+      <p className="mt-6 text-right text-[9px] text-gray-500">Registrado el {new Date(i.created_at).toLocaleString('es-BO')} · CIAGRO SA</p>
     </div></div>
 }
 
 function Matrix({ vs, ins, onBack }: { vs: V[]; ins: Insp[]; onBack: () => void }) {
   const cols = vs.map(v => ({ v, i: ins.find(x => x.vehicle_id === v.id && x.kind === 'inspeccion') })).filter(c => c.i)
-  return <div><style>{'@media print{@page{size:landscape}}'}</style><p className="print-only hidden mb-3 text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p>
+  return <div><style>{'@media print{@page{size:landscape}}'}</style><p className="print-only hidden mb-3 text-lg font-bold tracking-[0.15em]">CIAGRO SA</p>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
     <div className="overflow-x-auto rounded-lg bg-white p-6 text-[11px] text-black"><h1 className="mb-1 text-base font-bold uppercase">Informe general de inspecciones</h1><p className="mb-3 text-[10px]">Última inspección de cada vehículo · B Bueno · R Regular · M Malo · N/T No tiene</p>
       {!cols.length ? <p>Aún no hay inspecciones.</p> : <table className="w-full border-collapse"><thead><tr className="bg-gray-200"><th className="border border-gray-400 px-1 text-left">Punto</th>{cols.map(c => <th key={c.v.id} className="border border-gray-400 px-1">{c.v.plate}</th>)}</tr></thead>
@@ -365,7 +365,7 @@ function Panel({ obs, vs, area, who, onBack, onDone, vehicleId, embedded }: { ob
     error ? alert(error.message) : onDone()
   }
   return <div><style>{KEEP}</style>
-    {!embedded && <p className="print-only hidden mb-3 text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p>}
+    {!embedded && <p className="print-only hidden mb-3 text-lg font-bold tracking-[0.15em]">CIAGRO SA</p>}
     {!embedded && <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>}
     {embedded ? <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Pendientes de esta camioneta</h3> : <h2 className="text-2xl font-semibold text-white">Pendientes por prioridad{area && ` · ${area}`}</h2>}
     <div className="mt-4 grid grid-cols-3 gap-3">{(['A', 'M', 'B'] as Pri[]).map(k => <div key={k} className="keep-bg rounded-xl p-4 text-center" style={{ ...bg(PRI[k].c), color: k === 'M' ? '#000' : '#fff' }}><p className="text-3xl font-bold">{list.filter(o => o.priority === k).length}</p><p className="text-[11px] font-bold tracking-widest">{PRI[k].l}</p></div>)}</div>
@@ -432,11 +432,11 @@ function WorkReport({ w, v, onBack, onChanged, onDelete }: { w: Work; v?: V; onB
       {onDelete && <button onClick={onDelete} className="flex h-10 items-center gap-1.5 rounded-xl border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="size-4" />Eliminar</button>}
       <button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
     <div className="mx-auto max-w-3xl rounded-lg bg-white p-6 text-[12px] text-black sm:p-10">
-      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p><h1 className="text-right text-base font-bold uppercase">Orden de taller</h1></div>
+      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SA</p><h1 className="text-right text-base font-bold uppercase">Orden de taller</h1></div>
       <div className="grid gap-x-6 sm:grid-cols-2">{row('Placa', v?.plate)}{row('Vehículo', v?.name)}{row('Dueño / conductor', v?.driver)}{row('Área', v?.area)}{row('Fecha de ingreso', fmtD(w.entry_date))}{row('Fecha de salida', w.exit_date ? fmtD(w.exit_date) : 'Aún en taller')}{row('Km de ingreso', w.km != null ? w.km.toLocaleString('es-BO') + ' km' : '')}{row('Días en taller', `${days} día${days === 1 ? '' : 's'}${w.exit_date ? '' : ' (hasta hoy)'}`)}{row('Motivo', w.reason)}{row('Detalle', w.reason_note)}{row('Taller / mecánico', w.shop)}{row('Registrado por', w.created_by_name)}</div>
       <div className="mt-4 break-inside-avoid"><p className="mb-1 font-semibold">Trabajos realizados</p><p className="min-h-24 whitespace-pre-wrap border border-gray-400 p-2">{w.work}</p></div>
       <div className="mt-12 grid grid-cols-2 gap-10 text-center break-inside-avoid"><div className="border-t border-black pt-1">Responsable del vehículo</div><div className="border-t border-black pt-1">Encargado de taller</div></div>
-      <p className="mt-6 text-right text-[9px] text-gray-500">Registrado el {new Date(w.created_at).toLocaleString('es-BO')} · CIAGRO SRL</p>
+      <p className="mt-6 text-right text-[9px] text-gray-500">Registrado el {new Date(w.created_at).toLocaleString('es-BO')} · CIAGRO SA</p>
     </div>
     {ed && <WorkEdit w={w} onClose={() => setEd(false)} onDone={onChanged} />}
   </div>

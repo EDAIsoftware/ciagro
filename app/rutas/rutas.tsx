@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { buildHojaXlsx, type HRoute } from '@/lib/hoja-xlsx'
 
 export type Tech = { id: string; name: string; area: string; phone: string; active: boolean; off_from: string | null; off_to: string | null; off_reason: string }
 export type Veh = { id: string; name: string; plate: string; driver: string; area: string; odometer: number; km_next: number | null }
 export type Route = { id: string; number: number; year: number; week: number; tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; depart_time: string | null; return_date: string | null; cash: number; work_days: number | null; status: 'borrador' | 'confirmada' | 'cerrada'; notes: string; created_by_name: string; created_at: string }
 export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; notes: string; created_by_name: string; created_at: string }
+export type Client = { id: string; name: string; contact: string; zone: string; meeting_point: string; machines: { brand: string; machine: string; model: string }[] }
 type Change = { id: string; who: string; what: string; at: string }
 type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; return_date: string | null }
 
@@ -18,7 +20,7 @@ const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 
 const btn = 'h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5'
 const DN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-const FIRMAS = [['NICOLAS FAREL', 'SUBGERENTE SERVICIO TEC.'], ['GUIDO MORENO', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
+const FIRMAS = [['GUIDO MORENO', 'SUBGERENTE SERVICIO TEC.'], ['NICOLAS FAREL', 'JEFE DE TALLER'], ['YEYSON BASTO', 'ASIS. PROGRAM. SERV. TEC.']]
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const today = () => ymd(new Date())
 const fmtD = (s?: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')
@@ -41,13 +43,13 @@ function Modal({ title, sub, onClose, children }: { title: string; sub?: string;
 }
 const Chip = ({ c, t }: { c: string; t: string }) => <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: c + '22', color: c }}>{t}</span>
 
-type Ctx = { techs: Tech[]; vehs: Veh[]; who: string; techState: (t: Tech, d?: string) => { l: string; c: string }; vehState: (v: Veh, d?: string) => { l: string; c: string }; warn: (r: Draft, selfId: string | null) => string[]; tName: (id?: string | null) => string; vOf: (id?: string | null) => Veh | undefined; log: (id: string, what: string) => PromiseLike<unknown>; load: () => Promise<void>; open: (id: string) => void; back: () => void }
+type Ctx = { techs: Tech[]; vehs: Veh[]; routes: Route[]; who: string; techState: (t: Tech, d?: string) => { l: string; c: string }; vehState: (v: Veh, d?: string) => { l: string; c: string }; warn: (r: Draft, selfId: string | null) => string[]; tName: (id?: string | null) => string; vOf: (id?: string | null) => Veh | undefined; log: (id: string, what: string) => PromiseLike<unknown>; load: () => Promise<void>; open: (id: string) => void; back: () => void }
 const Warn = ({ list }: { list: string[] }) => list.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">{list.map((w, i) => <p key={i} className="py-0.5">⚠ {w}</p>)}</div> : null
 const iwInfo = (d: string) => { const w = isoWeek(d); return <p className="text-xs text-slate-500 sm:col-span-2">Semana {w.week} del {w.year}. El número de ruta se asigna solo al crear.</p> }
 
 function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
-  const { techs, vehs, who, techState, vehState, warn, tName, vOf, log, load, open, back } = c
-  const [d, setD] = useState({ tech_id: r?.tech_id ?? '', support: r?.support ?? [] as string[], vehicle_id: r?.vehicle_id ?? '', depart_date: r?.depart_date ?? today(), depart_time: r?.depart_time?.slice(0, 5) ?? '', return_date: r?.return_date ?? '', cash: String(r?.cash ?? ''), days: r?.work_days != null ? String(r.work_days) : '', notes: r?.notes ?? '' })
+  const { techs, vehs, routes, who, techState, vehState, warn, tName, vOf, log, load, open, back } = c
+  const [d, setD] = useState({ tech_id: r?.tech_id ?? '', support: r?.support ?? [] as string[], vehicle_id: r?.vehicle_id ?? '', depart_date: r?.depart_date ?? today(), depart_time: r?.depart_time?.slice(0, 5) ?? '', return_date: r?.return_date ?? '', cash: String(r?.cash ?? ''), days: r?.work_days != null ? String(r.work_days) : '', notes: r?.notes ?? '', num: String(r?.number ?? (routes.length ? Math.max(...routes.map(x => x.number)) + 1 : 384)) })
   const [e, setE] = useState('')
   const auto = d.return_date && d.return_date >= d.depart_date ? workDays(d.depart_date, d.return_date) : null
   const ws = warn({ tech_id: d.tech_id || null, support: d.support, vehicle_id: d.vehicle_id || null, depart_date: d.depart_date, return_date: d.return_date || null }, r?.id ?? null)
@@ -55,8 +57,11 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
   async function save() {
     if (!d.tech_id || !d.vehicle_id || !d.depart_date) return setE('Elige el técnico, la camioneta y la fecha de salida.')
     if (d.return_date && d.return_date < d.depart_date) return setE('El retorno no puede ser antes de la salida.')
+    const n = Math.round(+d.num)
+    if (!(n > 0)) return setE('Escribe el número de la ruta.')
+    if (routes.some(x => x.number === n && x.id !== r?.id)) return setE(`Ya existe la ruta ${n}. Escribe otro número.`)
     const iw = isoWeek(d.depart_date)
-    const body = { tech_id: d.tech_id, support: d.support.filter(x => x !== d.tech_id), vehicle_id: d.vehicle_id, depart_date: d.depart_date, depart_time: d.depart_time || null, return_date: d.return_date || null, cash: +d.cash || 0, work_days: d.days ? +d.days : auto, notes: d.notes.trim(), year: iw.year, week: iw.week }
+    const body = { number: n, tech_id: d.tech_id, support: d.support.filter(x => x !== d.tech_id), vehicle_id: d.vehicle_id, depart_date: d.depart_date, depart_time: d.depart_time || null, return_date: d.return_date || null, cash: +d.cash || 0, work_days: d.days ? +d.days : auto, notes: d.notes.trim(), year: iw.year, week: iw.week }
     if (r) {
       const { error } = await supabase.from('rt_routes').update(body).eq('id', r.id)
       if (error) return setE(error.message)
@@ -67,6 +72,7 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
       if (r.depart_date !== body.depart_date || (r.depart_time ?? '').slice(0, 5) !== (body.depart_time ?? '')) ch.push(`Salida: ${fmtD(r.depart_date)} → ${fmtD(body.depart_date)} ${body.depart_time ?? ''}`)
       if ((r.return_date ?? '') !== (body.return_date ?? '')) ch.push(`Retorno: ${fmtD(r.return_date)} → ${fmtD(body.return_date)}`)
       if (r.cash !== body.cash) ch.push(`Efectivo: ${r.cash} → ${body.cash} Bs`)
+      if (r.number !== body.number) ch.push(`Número de ruta: ${r.number} → ${body.number}`)
       if (ch.length) await log(r.id, ch.join(' · '))
       await load(); open(r.id)
     } else {
@@ -80,6 +86,7 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
     <button onClick={() => (r ? open(r.id) : back())} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
     <h2 className="text-2xl font-semibold text-white">{r ? `Editar ruta ${r.number}` : 'Nueva ruta'}</h2>
     <div className="frost-card mt-5 grid gap-4 p-5 sm:grid-cols-2">
+      <div className="sm:col-span-2"><Lab t="Nº de ruta (hoja)"><input type="number" inputMode="numeric" className={inp} value={d.num} onChange={x => setD({ ...d, num: x.target.value })} /></Lab><p className="mt-1 text-[11px] text-slate-500">Se propone el siguiente número. Puedes cambiarlo para seguir con el de tu Excel; la próxima ruta continuará desde ahí.</p></div>
       <Lab t="Técnico asignado"><select className={inp} value={d.tech_id} onChange={x => setD({ ...d, tech_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{act.map(t => { const s = techState(t, d.depart_date); return <option key={t.id} value={t.id} className="bg-[#111a2a]">{t.name} · {s.l}</option> })}</select></Lab>
       <Lab t="Camioneta"><select className={inp} value={d.vehicle_id} onChange={x => setD({ ...d, vehicle_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{[...vehs].sort((a, b) => Number(b.area === 'Servicio') - Number(a.area === 'Servicio') || a.plate.localeCompare(b.plate)).map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name} · {vehState(v, d.depart_date).l}</option>)}</select></Lab>
       <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div></Lab></div>
@@ -137,7 +144,7 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
 }
 
 type SK = 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet' | 'job'
-function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
+function ReqForm({ q, route, history, clients, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
   const assigned = !!(route || q?.route_id)
   const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha' })
   const [err, setErr] = useState('')
@@ -149,13 +156,25 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
   const marcas = f.brand && !MARCAS.some(m => norm(m) === norm(f.brand)) ? [...MARCAS, f.brand] : MARCAS
   function pickBrand(v: string) { setF(p => ({ ...p, brand: v, model: '', machine: CATALOGO[v]?.maq.length === 1 ? CATALOGO[v].maq[0] : p.machine })) }
   const mine = history.filter(h => f.client.trim() && norm(h.client) === norm(f.client))
-  const combos = uniq(mine.map(h => [h.brand, h.machine, h.model].join('|'))).map(c => c.split('|')).filter(c => c.some(Boolean))
+  const known = f.client.trim() ? clients.find(c => norm(c.name) === norm(f.client)) : undefined
+  const pts = uniq([...mine.map(h => h.meeting_point), known?.meeting_point])
+  const combos = uniq([...mine.map(h => [h.brand, h.machine, h.model].join('|')), ...(known?.machines ?? []).map(m => [m.brand, m.machine, m.model].join('|'))]).map(c => c.split('|')).filter(c => c.some(Boolean))
   // Al elegir un cliente conocido se completan zona, contacto, punto de encuentro (si tiene uno solo) y máquina (si tiene una sola)
   function fill(name: string) {
     if (q) return
-    const rs = history.filter(h => norm(h.client) === norm(name)); if (!rs.length) return
-    const pts = uniq(rs.map(r => r.meeting_point)), cs = uniq(rs.map(r => [r.brand, r.machine, r.model].join('|'))), l = rs[0]
-    setF(p => ({ ...p, client: l.client, zone: p.zone || l.zone, contact: p.contact || l.contact, meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(cs.length === 1 && !p.machine && !p.model && !p.brand ? { brand: canon(l.brand), machine: l.machine, model: l.model } : {}) }))
+    const rs = history.filter(h => norm(h.client) === norm(name)), cl = clients.find(c => norm(c.name) === norm(name))
+    if (!rs.length && !cl) return
+    const pts = uniq([...rs.map(r => r.meeting_point), cl?.meeting_point]), l = rs[0]
+    const cs = uniq([...rs.map(r => [r.brand, r.machine, r.model].join('|')), ...(cl?.machines ?? []).map(m => [m.brand, m.machine, m.model].join('|'))]).filter(c => c.split('|').some(Boolean))
+    const one = cs.length === 1 ? cs[0].split('|') : null
+    setF(p => ({ ...p, client: l?.client ?? cl!.name, zone: p.zone || l?.zone || cl?.zone || '', contact: p.contact || l?.contact || cl?.contact || '', meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(one && !p.machine && !p.model && !p.brand ? { brand: canon(one[0]), machine: one[1], model: one[2] } : {}) }))
+  }
+  // Guarda o actualiza el cliente y sus máquinas para que aparezcan la próxima vez
+  async function remember(b: { client: string; brand: string; machine: string; model: string; zone: string; contact: string; meeting_point: string }) {
+    const ex = clients.find(c => norm(c.name) === norm(b.client)), machines = [...(ex?.machines ?? [])]
+    if ((b.brand || b.machine || b.model) && !machines.some(m => norm(m.brand) === norm(b.brand) && norm(m.machine) === norm(b.machine) && norm(m.model) === norm(b.model))) machines.push({ brand: b.brand, machine: b.machine, model: b.model })
+    const row = { name: ex?.name ?? b.client, contact: b.contact || ex?.contact || '', zone: b.zone || ex?.zone || '', meeting_point: b.meeting_point || ex?.meeting_point || '', machines }
+    await (ex ? supabase.from('rt_clients').update(row).eq('id', ex.id) : supabase.from('rt_clients').insert(row))
   }
   async function save() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
@@ -164,19 +183,20 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
     const body = { client: f.client.trim(), brand: f.brand.trim(), machine: f.machine.trim(), model: f.model.trim(), call_date: f.call || null, zone: f.zone.trim(), contact: f.contact.trim(), meeting_point: f.meet.trim(), job: f.job.trim(), warranty: f.warranty, credit: f.credit, priority: +f.pri, route_id: rid, status: !rid ? (q?.status === 'cancelada' ? 'cancelada' : 'pendiente') : f.done ? 'hecha' : 'asignada', visit_date: rid ? f.visit || null : null, amount: f.amount ? +f.amount : null, paid_date: f.paid || null }
     const { error } = q ? await supabase.from('rt_requests').update(body).eq('id', q.id) : await supabase.from('rt_requests').insert({ ...body, created_by_name: who })
     if (error) return setErr(error.message)
+    await remember(body)
     onDone(`${q ? 'Editó' : 'Agregó'} la visita: ${body.client}`); onClose()
   }
   const sel = (k: 'warranty' | 'credit') => <select className={inp} value={f[k] ? 'si' : 'no'} onChange={e => setF({ ...f, [k]: e.target.value === 'si' })}><option value="no" className="bg-[#111a2a]">No</option><option value="si" className="bg-[#111a2a]">Sí</option></select>
   return <Modal title={q ? 'Editar solicitud' : 'Nueva solicitud'} sub={route ? `Se agrega a la ruta ${route.number}` : undefined} onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">
-    <div className="sm:col-span-2"><Lab t="Cliente"><TextIn value={f.client} onChange={v => set('client', v)} options={uniq(history.map(h => h.client))} onPick={fill} onCommit={fill} placeholder="Escribe una letra y elige" /></Lab></div>
-    {combos.length > 1 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente</span>{combos.map((c, i) => <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: canon(c[0]), machine: c[1], model: c[2] }))} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:border-[#c6ff00]">{c.filter(Boolean).join(' · ')}</button>)}</div>}
+    <div className="sm:col-span-2"><Lab t="Cliente"><TextIn value={f.client} onChange={v => set('client', v)} options={uniq([...history.map(h => h.client), ...clients.map(c => c.name)])} onPick={fill} onCommit={fill} placeholder="Escribe una letra y elige" /></Lab></div>
+    {combos.length > 0 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente (toca una para llenar los datos)</span>{combos.map((c, i) => { const on = norm(f.brand) === norm(c[0]) && norm(f.machine) === norm(c[1]) && norm(f.model) === norm(c[2]); return <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: canon(c[0]), machine: c[1], model: c[2] }))} className={`rounded-full border px-3 py-1.5 text-xs ${on ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/15 text-slate-300 hover:border-[#c6ff00]'}`}>{c.filter(Boolean).join(' · ')}</button> })}<button type="button" onClick={() => setF(p => ({ ...p, brand: '', machine: '', model: '' }))} className="rounded-full border border-dashed border-white/20 px-3 py-1.5 text-xs text-slate-400 hover:text-white">+ Otra máquina</button></div>}
     <Lab t="Marca"><select className={inp} value={f.brand} onChange={e => pickBrand(e.target.value)}><option value="" className="bg-[#111a2a]">Elegir marca…</option>{marcas.map(m => <option key={m} value={m} className="bg-[#111a2a]">{m}</option>)}</select></Lab>
     <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.filter(sameBrand).map(h => h.machine), ...(cat ? cat.maq : MAQ_GENERICAS), ...history.filter(sameBrand).map(h => h.machine)])} /></Lab>
     <Lab t={f.brand ? `Modelo (${f.brand})` : 'Modelo'}><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.filter(sameBrand).map(h => h.model), ...history.filter(sameBrand).map(h => h.model), ...(cat ? cat.mod : [])])} /></Lab>
     <Lab t="Fecha de llamada"><input type="date" className={inp} value={f.call} onChange={e => setF({ ...f, call: e.target.value })} /></Lab>
     <Lab t="Zona"><TextIn value={f.zone} onChange={v => set('zone', v)} options={uniq([...mine.map(h => h.zone), ...history.map(h => h.zone), 'Norte', 'Este', 'Sur', 'Oeste'])} /></Lab>
     <Lab t="Contacto (teléfono y nombre)"><TextIn value={f.contact} onChange={v => set('contact', v)} options={uniq([...mine.map(h => h.contact), ...history.map(h => h.contact)])} /></Lab>
-    <div className="sm:col-span-2"><Lab t="Punto de encuentro / dirección"><TextIn value={f.meet} onChange={v => set('meet', v)} options={uniq([...mine.map(h => h.meeting_point), ...history.map(h => h.meeting_point)])} /></Lab></div>
+    <div className="sm:col-span-2"><Lab t="Punto de encuentro / dirección"><TextIn value={f.meet} onChange={v => set('meet', v)} options={uniq([...mine.map(h => h.meeting_point), ...history.map(h => h.meeting_point)])} /></Lab>{pts.length > 1 && <div className="mt-2 flex flex-wrap gap-2">{pts.map(x => <button type="button" key={x} onClick={() => set('meet', x)} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:border-[#c6ff00]">{x}</button>)}</div>}</div>
     <div className="sm:col-span-2"><Lab t="Trabajo solicitado"><TextIn area value={f.job} onChange={v => set('job', v)} /></Lab></div>
     <Lab t="Garantía">{sel('warranty')}</Lab><Lab t="Crédito">{sel('credit')}</Lab>
     <div className="sm:col-span-2"><Lab t="Prioridad"><select className={inp} value={f.pri} onChange={e => setF({ ...f, pri: e.target.value })}>{[1, 2, 3].map(n => <option key={n} value={n} className="bg-[#111a2a]">{n} · {PRIL[n]}</option>)}</select></Lab></div>
@@ -188,55 +208,39 @@ function ReqForm({ q, route, history, who, onClose, onDone }: { q: Req | null; r
 
 export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
   const nm = (id?: string | null) => techs.find(t => t.id === id)?.name ?? '—'
-  const cell = 'border border-gray-400 px-1 py-0.5 align-top'
-  useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SRL`; return () => { document.title = t } }, [r.number])
+  const cell = 'border border-gray-400 px-2 py-2 align-top'
+  useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SA`; return () => { document.title = t } }, [r.number])
   const rows = [...visits].sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
-  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-wrap{overflow:visible!important;padding:10mm!important;border-radius:0!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:8.5px!important}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
+  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-wrap{overflow:visible!important;padding:11mm!important;border-radius:0!important;font-size:13px!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:10.5px!important}.rs-table td{height:12mm}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
-    <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-5 text-[11px] text-black">
-      <div className="mb-3 flex items-end justify-between border-b-2 border-black pb-2"><p className="text-lg font-bold tracking-[0.15em]">CIAGRO SRL</p><h1 className="text-base font-bold uppercase">Ruta de trabajo</h1><p className="text-sm">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
-      <div className="grid gap-x-6 sm:grid-cols-2">{[['Técnico asignado', nm(r.tech_id)], ['Técnico de apoyo', r.support.length ? r.support.map(nm).join(' - ') : '-'], ['Vehículo (placa)', veh ? `${veh.plate} · ${veh.name}` : '—'], ['Salida (fecha / hora)', `${fmtD(r.depart_date)} ${r.depart_time ? r.depart_time.slice(0, 5) : ''}`], ['Retorno estimado', fmtD(r.return_date)], ['Efectivo asignado (Bs)', `${r.cash.toLocaleString('es-BO')} · ${r.work_days ?? '-'} días laborales`]].map(([a, b]) => <div key={a} className="flex gap-2 border-b border-gray-300 py-1"><span className="w-40 shrink-0 font-semibold">{a}</span><span>{b}</span></div>)}</div>
-      <p className="mb-1 mt-3 text-[10px]">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
-      <table className="rs-table w-full min-w-[900px] border-collapse"><colgroup>{[3, 9, 6, 6, 6, 6, 5, 8, 10, 14, 4, 4, 3.5, 5, 5, 5.5].map((w, i) => <col key={i} style={{ width: w + '%' }} />)}</colgroup><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
+    <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-6 text-[14px] text-black">
+      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><p className="text-2xl font-bold tracking-[0.15em]">CIAGRO SA</p><h1 className="text-xl font-bold uppercase">Ruta de trabajo</h1><p className="text-base">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
+      <div className="grid gap-x-8 sm:grid-cols-2">{[['Técnico asignado', nm(r.tech_id)], ['Salida (fecha / hora)', `${fmtD(r.depart_date)} ${r.depart_time ? r.depart_time.slice(0, 5) : ''}`], ['Técnico de apoyo', r.support.length ? r.support.map(nm).join(' - ') : '-'], ['Retorno estimado', fmtD(r.return_date)], ['Vehículo (placa)', veh ? `${veh.plate} · ${veh.name}` : '—'], ['Efectivo asignado (Bs)', r.cash.toLocaleString('es-BO')], ['Responsable de la camioneta', veh?.driver || '—'], ['Días laborales', String(r.work_days ?? '-')]].map(([a, b]) => <div key={a} className="flex gap-2 border-b border-gray-300 py-1.5"><span className="w-52 shrink-0 font-semibold">{a}</span><span>{b}</span></div>)}</div>
+      <p className="mb-1.5 mt-4 text-xs">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
+      <table className="rs-table w-full min-w-[1100px] border-collapse text-[12.5px]"><colgroup>{[3, 9, 6, 6, 6, 6, 5, 8, 10, 14, 4, 4, 3.5, 5, 5, 5.5].map((w, i) => <col key={i} style={{ width: w + '%' }} />)}</colgroup><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
         <tbody>{Array.from({ length: Math.max(6, rows.length) }, (_, i) => { const v = rows[i]; return <tr key={i}><td className={cell}>{i + 1}</td>{v ? <><td className={cell}>{v.client}</td><td className={cell}>{v.brand}</td><td className={cell}>{v.machine}</td><td className={cell}>{v.model}</td><td className={cell}>{fmtD(v.call_date)}</td><td className={cell}>{v.zone}</td><td className={cell}>{v.contact}</td><td className={cell}>{v.meeting_point}</td><td className={cell + ' whitespace-pre-wrap'}>{v.job}</td><td className={cell}>{v.warranty ? 'SI' : 'NO'}</td><td className={cell}>{v.credit ? 'SI' : 'NO'}</td><td className={cell + ' keep-bg text-center font-bold'} style={{ '--bg': PRI[v.priority], background: PRI[v.priority] } as React.CSSProperties}>{v.priority}</td><td className={cell}>{v.amount != null ? v.amount.toLocaleString('es-BO') : '-'}</td><td className={cell}>{v.paid_date ? fmtD(v.paid_date) : '-'}</td><td className={cell}>{fmtD(v.visit_date)}</td></> : Array.from({ length: 15 }, (_, k) => <td key={k} className={cell}>&nbsp;</td>)}</tr> })}</tbody></table>
-      {r.notes && <p className="mt-3"><b>Observaciones:</b> {r.notes}</p>}
-      <div className="mt-12 grid grid-cols-3 gap-10 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1"><b>{n}</b><br /><span className="text-[10px]">{c}</span></div>)}</div>
+      {r.notes && <p className="mt-4"><b>Observaciones:</b> {r.notes}</p>}
+      <div className="mt-16 grid grid-cols-3 gap-12 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1.5"><b>{n}</b><br /><span className="text-xs">{c}</span></div>)}</div>
     </div></div>
 }
 
-const shortName = (n: string) => { const w = n.trim().split(/\s+/); return (w[0] + (w[1] ? ' ' + w[1][0] + '.' : '')).toUpperCase() }
-const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const cl = (v: unknown, st = 's', merge = 0) => `<Cell ss:StyleID="${st}"${merge ? ` ss:MergeAcross="${merge}"` : ''}><Data ss:Type="String">${esc(v)}</Data></Cell>`
-const rw = (cells: string[]) => `<Row>${cells.join('')}</Row>`
-function weekXml(week: number, year: number, routes: Route[], techs: Tech[], vehs: Veh[], reqs: Req[], tState: (t: Tech) => { l: string }, tName: (id?: string | null) => string, lite = false): string {
-  const bd = ['Left', 'Right', 'Top', 'Bottom'].map(p => `<Border ss:Position="${p}" ss:LineStyle="Continuous" ss:Weight="1"/>`).join('')
-  const st = (id: string, extra = '') => `<Style ss:ID="${id}"><Alignment ss:Vertical="Top" ss:WrapText="1"${id === 'h' || id.startsWith('p') ? ' ss:Horizontal="Center"' : ''}/><Borders>${bd}</Borders>${extra}</Style>`
-  const styles = `<Styles><Style ss:ID="Default"><Font ss:FontName="Calibri" ss:Size="10"/></Style>${st('s')}${st('b', '<Font ss:Bold="1"/>')}${st('h', '<Font ss:Bold="1"/><Interior ss:Color="#D9D9D9" ss:Pattern="Solid"/>')}${st('p1', '<Font ss:Bold="1"/><Interior ss:Color="#FF0000" ss:Pattern="Solid"/>')}${st('p2', '<Font ss:Bold="1"/><Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>')}${st('p3', '<Font ss:Bold="1"/><Interior ss:Color="#34A853" ss:Pattern="Solid"/>')}<Style ss:ID="t"><Font ss:Bold="1" ss:Size="14"/></Style><Style ss:ID="f"><Alignment ss:Horizontal="Center"/><Font ss:Bold="1"/></Style></Styles>`
-  const sheet = (name: string, widths: number[], rows: string[]) => `<Worksheet ss:Name="${esc(name).slice(0, 31)}"><Table>${widths.map(w => `<Column ss:Width="${w}"/>`).join('')}${rows.join('')}</Table></Worksheet>`
-  const rrhh = sheet('RRHH', [110, 160, 110, 110], [rw([cl('CIAGRO SRL · Técnicos', 't')]), rw(['Área', 'Técnico', 'Estado hoy', 'Teléfono'].map(h => cl(h, 'h'))), ...techs.filter(t => t.active).map(t => rw([cl(t.area), cl(t.name), cl(tState(t).l), cl(t.phone)]))])
-  const car = sheet('Camionetas', [90, 160, 140, 90], [rw([cl('Camionetas', 't')]), rw(['Placa', 'Vehículo', 'Responsable', 'Área'].map(h => cl(h, 'h'))), ...vehs.map(v => rw([cl(v.plate), cl(v.name), cl(v.driver), cl(v.area)]))])
-  const fd = (s?: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '')
-  const route = (r: Route) => {
-    const v = vehs.find(x => x.id === r.vehicle_id), vs = reqs.filter(q => q.route_id === r.id && q.status !== 'cancelada').sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
-    const head = ['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'Fecha llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'Fecha pago', 'Fecha visita']
-    const rows = [rw([cl('CIAGRO SRL', 't'), cl(''), cl('RUTA DE TRABAJO', 't', 3), cl(''), cl(''), cl(`SEMANA ${r.week} · AÑO ${r.year} · Nº ${r.number}`, 'b', 4)]),
-      rw([cl('Técnico asignado', 'b', 1), cl(tName(r.tech_id), 's', 2), cl('Salida', 'b'), cl(`${fd(r.depart_date)} ${r.depart_time?.slice(0, 5) ?? ''}`, 's', 2)]),
-      rw([cl('Técnico de apoyo', 'b', 1), cl(r.support.map(i => tName(i)).join(' - ') || '-', 's', 2), cl('Retorno estimado', 'b'), cl(fd(r.return_date), 's', 2)]),
-      rw([cl('Vehículo (placa)', 'b', 1), cl(v ? `${v.plate} · ${v.name}` : '', 's', 2), cl('Efectivo (Bs)', 'b'), cl(`${r.cash} · ${r.work_days ?? '-'} días laborales`, 's', 2)]),
-      rw([cl('Prioridad: 1 = Alta / 2 = Normal / 3 = Baja', 't')]), rw(head.map(h => cl(h, 'h')))]
-    for (let i = 0; i < Math.max(6, vs.length); i++) { const q = vs[i]; rows.push(rw(q ? [cl(i + 1), cl(q.client), cl(q.brand), cl(q.machine), cl(q.model), cl(fd(q.call_date)), cl(q.zone), cl(q.contact), cl(q.meeting_point), cl(q.job), cl(q.warranty ? 'SI' : 'NO'), cl(q.credit ? 'SI' : 'NO'), cl(q.priority, 'p' + q.priority), cl(q.amount ?? '-'), cl(q.paid_date ? fd(q.paid_date) : '-'), cl(fd(q.visit_date))] : [cl(i + 1), ...Array.from({ length: 15 }, () => cl(''))])) }
-    rows.push(rw([]), rw([cl(''), ...FIRMAS.flatMap(([n]) => [cl(n, 'f', 3), cl('')])]), rw([cl(''), ...FIRMAS.flatMap(([, c]) => [cl(c, 'f', 3), cl('')])]))
-    return sheet(`${r.number}-${shortName(tName(r.tech_id))}`, [30, 120, 80, 90, 80, 70, 70, 110, 110, 190, 55, 55, 45, 65, 70, 70], rows)
-  }
-  return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}${lite ? '' : rrhh + car}${routes.map(route).join('')}</Workbook>`
+// Datos de las rutas en el formato de la planilla (todo en mayúsculas, como la hoja original)
+function toHojaRoutes(rs: Route[], techs: Tech[], vehs: Veh[], reqs: Req[]): HRoute[] {
+  const U = (x?: string | null) => (x ?? '').toUpperCase(), nm = (id?: string | null) => U(techs.find(t => t.id === id)?.name)
+  return [...rs].sort((x, y) => x.number - y.number).map(r => ({
+    week: r.week, year: r.year, number: r.number, tech: nm(r.tech_id), support: r.support.map(nm).join(' - '), plate: vehs.find(v => v.id === r.vehicle_id)?.plate ?? '',
+    departDate: r.depart_date, departTime: r.depart_time, returnDate: r.return_date, cash: r.cash, workDays: r.work_days,
+    visits: reqs.filter(q => q.route_id === r.id && q.status !== 'cancelada').map(q => ({ client: U(q.client), brand: U(q.brand), machine: U(q.machine), model: U(q.model), callDate: q.call_date, zone: U(q.zone), contact: U(q.contact), meet: U(q.meeting_point), job: U(q.job), warranty: q.warranty, credit: q.credit, priority: q.priority, amount: q.amount, paidDate: q.paid_date, visitDate: q.visit_date })),
+  }))
 }
-function download(name: string, text: string) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/vnd.ms-excel;charset=utf-8' })); a.download = name; a.click() }
+function download(name: string, blob: Blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click() }
 
 export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string }) {
   const [techs, setTechs] = useState<Tech[]>([])
   const [vehs, setVehs] = useState<Veh[]>([])
   const [routes, setRoutes] = useState<Route[]>([])
   const [reqs, setReqs] = useState<Req[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [shops, setShops] = useState<string[]>([])
   const [reds, setReds] = useState<string[]>([])
   const [tab, setTab] = useState<'semana' | 'rutas' | 'solicitudes' | 'tecnicos'>('semana')
@@ -251,13 +255,14 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const [err, setErr] = useState('')
 
   const load = useCallback(async () => {
-    const [a, b, c, d, e, f] = await Promise.all([
+    const [a, b, c, d, e, f, g] = await Promise.all([
       supabase.from('rt_technicians').select('*').order('name'),
       supabase.from('insp_vehicles').select('id,name,plate,driver,area,odometer,km_next').order('plate'),
       supabase.from('rt_routes').select('*').order('number', { ascending: false }),
       supabase.from('rt_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('insp_workshop').select('vehicle_id').is('exit_date', null),
       supabase.from('insp_observations').select('vehicle_id').eq('done', false).eq('priority', 'A'),
+      supabase.from('rt_clients').select('*').order('name'),
     ])
     const er = a.error || b.error || c.error || d.error
     if (er) return setErr(er.message)
@@ -265,6 +270,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     setVehs((b.data ?? []).map(r => ({ ...r, odometer: +r.odometer, km_next: r.km_next == null ? null : +r.km_next })) as Veh[])
     setRoutes((c.data ?? []).map(r => ({ ...r, cash: +(r.cash ?? 0), support: r.support ?? [] })) as Route[])
     setReqs((d.data ?? []).map(r => ({ ...r, amount: r.amount == null ? null : +r.amount })) as Req[])
+    setClients(g.error ? [] : ((g.data ?? []) as Client[]))
     setShops((e.data ?? []).map(r => r.vehicle_id)); setReds((f.data ?? []).map(r => r.vehicle_id)); setErr('')
   }, [])
   useEffect(() => { load() }, [load])
@@ -347,9 +353,9 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     await log(r.id, `${q.status === 'hecha' ? 'Desmarcó' : 'Marcó como hecha'} la visita: ${q.client}`); load()
   }
 
-  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
+  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} clients={clients} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
 
-  const ctx: Ctx = { techs, vehs, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
+  const ctx: Ctx = { techs, vehs, routes, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
   if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />
   if (scr === 'sheet' && route) return <RouteSheet r={route} techs={techs} veh={vOf(route.vehicle_id)} visits={reqs.filter(q => q.route_id === route.id && q.status !== 'cancelada')} onBack={() => setScr('detail')} />
   if (scr === 'detail' && route) {
@@ -359,7 +365,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     return <div className="no-print mx-auto max-w-3xl">
       <button onClick={() => { setScr('main'); setRid(null) }} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Semana {route.week} · {route.year}</p><h2 className="mt-1 text-2xl font-semibold text-white">Ruta {route.number}</h2></div><Chip c={st[1]} t={st[0]} /></div>
-      <div className="frost-card mt-4 grid gap-x-6 gap-y-2 p-5 text-sm sm:grid-cols-2">{[['Técnico', tName(route.tech_id)], ['Apoyo', route.support.map(tName).join(', ') || '—'], ['Camioneta', vOf(route.vehicle_id) ? `${vOf(route.vehicle_id)!.plate} · ${vOf(route.vehicle_id)!.name}` : '—'], ['Salida', `${fmtD(route.depart_date)} ${route.depart_time?.slice(0, 5) ?? ''}`], ['Retorno', fmtD(route.return_date)], ['Efectivo', `${route.cash.toLocaleString('es-BO')} Bs · ${route.work_days ?? '—'} días`]].map(([a, b]) => <p key={a}><span className="text-slate-500">{a}: </span><span className="text-white">{b}</span></p>)}</div>
+      <div className="frost-card mt-4 grid gap-x-6 gap-y-2 p-5 text-sm sm:grid-cols-2">{[['Técnico', tName(route.tech_id)], ['Apoyo', route.support.map(tName).join(', ') || '—'], ['Camioneta', vOf(route.vehicle_id) ? `${vOf(route.vehicle_id)!.plate} · ${vOf(route.vehicle_id)!.name}` : '—'], ['Salida', `${fmtD(route.depart_date)} ${route.depart_time?.slice(0, 5) ?? ''}`], ['Retorno', fmtD(route.return_date)], ['Efectivo', `${route.cash.toLocaleString('es-BO')} Bs`], ['Días laborales', String(route.work_days ?? '—')]].map(([a, b]) => <p key={a}><span className="text-slate-500">{a}: </span><span className="text-white">{b}</span></p>)}</div>
       {route.status !== 'cerrada' && <div className="mt-3"><Warn list={warn(route, route.id)} /></div>}
       <div className="mt-4 flex flex-wrap gap-2">
         {route.status === 'borrador' && <button onClick={() => setStatus(route, 'confirmada', 'Confirmó la ruta')} className="h-10 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Confirmar ruta</button>}
@@ -367,7 +373,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         {route.status === 'cerrada' && isAdmin && <button onClick={() => setStatus(route, 'confirmada', 'Reabrió la ruta')} className={btn}>Reabrir</button>}
         {route.status !== 'cerrada' && <button onClick={() => setScr('rform')} className={btn}><Pencil className="mr-1 inline size-3.5" />Editar</button>}
         <button onClick={() => setScr('sheet')} className={btn}><Printer className="mr-1 inline size-3.5" />Ver hoja / imprimir</button>
-        <button onClick={() => download(`RUTA ${route.number}.xml`, weekXml(route.week, route.year, [route], techs, vehs, reqs, t => techState(t), tName, true))} className={btn}>Descargar en Excel</button>
+        <button onClick={() => download(`HOJA DE RUTA - ${route.number}.xlsx`, buildHojaXlsx(toHojaRoutes([route], techs, vehs, reqs)))} className={btn}>Descargar en Excel</button>
         <button onClick={async () => { const { error } = await supabase.from('rt_print_jobs').insert({ route_id: route.id, requested_by_name: who }); alert(error ? error.message : 'Enviada a la impresora de la oficina. Sale en unos segundos si la computadora de impresión está encendida.') }} className={btn}>Enviar a la impresora de la oficina</button>
         {isAdmin && <button onClick={() => delRoute(route)} className="h-9 rounded-lg border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}
       </div>
@@ -401,7 +407,8 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
           {rs.map(r => <button key={r.id} onClick={() => open(r.id)} className="mb-1.5 block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/[0.06]"><b className="text-white">Ruta {r.number}</b> · {tName(r.tech_id)} · <span className="font-mono">{vOf(r.vehicle_id)?.plate ?? '—'}</span>{r.status === 'borrador' && <span className="ml-1 text-slate-500">(borrador)</span>}</button>)}
           {vs.map(q => <p key={q.id} className="py-0.5 text-[11px] text-slate-400"><span className="mr-1 inline-block size-2 rounded-full" style={{ background: PRI[q.priority] }} />{q.client} · {q.zone}</p>)}
           {!rs.length && !vs.length && <p className="text-xs text-slate-600">Sin salidas</p>}</div> })}</div>
-      <button onClick={() => { const rs = routes.filter(r => r.depart_date <= days[6] && days[0] <= end(r)); const w = isoWeek(days[0]); download(`HOJA DE RUTA - SEMANA ${w.week}.xml`, weekXml(w.week, w.year, rs, techs, vehs, reqs, t => techState(t), tName)) }} className={btn + ' mt-6'}>Descargar Excel de esta semana</button>
+      <button onClick={() => { const rs = routes.filter(r => r.depart_date <= days[6] && days[0] <= end(r)); const w = isoWeek(days[0]); download(`HOJA DE RUTA - SEMANA ${w.week}.xlsx`, buildHojaXlsx(toHojaRoutes(rs, techs, vehs, reqs))) }} className={btn + ' mt-6'}>Descargar Excel de esta semana</button>
+      <button onClick={() => download('HOJA DE RUTA - TODAS LAS SEMANAS.xlsx', buildHojaXlsx(toHojaRoutes(routes, techs, vehs, reqs)))} className={btn + ' mt-6 ml-2'}>Descargar todas las rutas (respaldo)</button>
       <h3 className="mt-8 text-sm font-semibold text-white">Técnicos hoy</h3><div className="mt-2 flex flex-wrap gap-2">{actTechs.map(t => { const s = techState(t); return <span key={t.id} className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: s.c + '66', color: s.c }}>{t.name} · {s.l}</span> })}</div>
       <h3 className="mt-6 text-sm font-semibold text-white">Camionetas fuera de servicio hoy</h3><div className="mt-2 flex flex-wrap gap-2">{vehs.map(v => ({ v, s: vehState(v) })).filter(x => x.s.l !== 'Disponible').map(({ v, s }) => <span key={v.id} className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: s.c + '66', color: s.c }}>{v.plate} · {s.l}</span>)}{!vehs.some(v => vehState(v).l !== 'Disponible') && <span className="text-xs text-slate-500">Todas disponibles.</span>}</div>
     </div>}

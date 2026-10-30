@@ -101,17 +101,19 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
 }
 
 // Solo se trabaja con estas marcas. Modelos y máquinas tomados de la planilla de rutas; lo nuevo que se registre se sugiere solo.
-const MARCAS = ['New Holland', 'Develon', 'Doosan', 'Bobcat', 'Pirelli']
+const MARCAS = ['New Holland', 'Develon', 'Bobcat', 'Kubota', 'Crucianelli', 'Penha', 'Baldan']
 const CATALOGO: Record<string, { maq: string[]; mod: string[] }> = {
   'New Holland': { maq: ['Tractor'], mod: ['6630', '8030', 'T5070', 'T6.130', 'T7.150', 'T7.180', 'T7.200', 'TM150'] },
   Develon: { maq: ['Excavadora'], mod: ['DX225LCA-7M', 'DX225LCA'] },
+  Bobcat: { maq: ['Minicargador'], mod: [] },
 }
-const MAQ_GENERICAS = ['Tractor', 'Excavadora', 'Cosechadora', 'Cargador', 'Pulverizadora']
+const MAQ_GENERICAS = ['Tractor', 'Excavadora', 'Cosechadora', 'Pala cargadora', 'Minicargador', 'Pulverizadora', 'Sembradora', 'Desbrozadora', 'Trasplantadora']
+export type CatItem = { id: string; kind: 'marca' | 'maquina' | 'modelo'; brand: string; name: string }
 const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-function TextIn({ value, onChange, options, onPick, onCommit, placeholder, area, mode }: { value: string; onChange: (v: string) => void; options?: string[]; onPick?: (v: string) => void; onCommit?: (v: string) => void; placeholder?: string; area?: boolean; mode?: 'text' | 'tel' | 'numeric' }) {
+function TextIn({ value, onChange, options, onPick, onCommit, placeholder, area, mode, max }: { max?: number; value: string; onChange: (v: string) => void; options?: string[]; onPick?: (v: string) => void; onCommit?: (v: string) => void; placeholder?: string; area?: boolean; mode?: 'text' | 'tel' | 'numeric' }) {
   const [open, setOpen] = useState(false)
   const v = norm(value.trim())
-  const list = (options ?? []).filter(o => o && norm(o) !== v && (!v || norm(o).includes(v))).slice(0, 6)
+  const list = (options ?? []).filter(o => o && norm(o) !== v && (!v || norm(o).includes(v))).slice(0, max ?? 6)
   const common = { value, placeholder, inputMode: mode, style: { paddingRight: 40 }, onFocus: () => setOpen(true), onBlur: () => { setTimeout(() => setOpen(false), 150); onCommit?.(value) } }
   return <div className="relative">
     {area ? <textarea {...common} className={inp + ' h-24 py-3'} onChange={e => onChange(e.target.value)} /> : <input {...common} className={inp} onChange={e => onChange(e.target.value)} />}
@@ -144,16 +146,20 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
 }
 
 type SK = 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet' | 'job'
-function ReqForm({ q, route, history, clients, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
+function ReqForm({ q, route, history, clients, catalog, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; catalog: CatItem[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
   const assigned = !!(route || q?.route_id)
   const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha' })
   const [err, setErr] = useState('')
   const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x && !!x.trim())))
   const set = (k: SK, v: string) => setF(p => ({ ...p, [k]: v }))
-  const canon = (b: string) => MARCAS.find(m => norm(m) === norm(b)) ?? b
+  const allBrands = uniq([...MARCAS, ...catalog.filter(c => c.kind === 'marca').map(c => c.name)])
+  const [newB, setNewB] = useState(false)
+  const canon = (b: string) => allBrands.find(m => norm(m) === norm(b)) ?? b
   const cat = CATALOGO[canon(f.brand)]
   const sameBrand = (h: Req) => !f.brand || norm(h.brand) === norm(f.brand)
-  const marcas = f.brand && !MARCAS.some(m => norm(m) === norm(f.brand)) ? [...MARCAS, f.brand] : MARCAS
+  const marcas = f.brand && !allBrands.some(m => norm(m) === norm(f.brand)) && !newB ? [...allBrands, f.brand] : allBrands
+  const catMaq = catalog.filter(c => c.kind === 'maquina').map(c => c.name)
+  const catMod = catalog.filter(c => c.kind === 'modelo' && norm(c.brand) === norm(f.brand)).map(c => c.name)
   function pickBrand(v: string) { setF(p => ({ ...p, brand: v, model: '', machine: CATALOGO[v]?.maq.length === 1 ? CATALOGO[v].maq[0] : p.machine })) }
   const mine = history.filter(h => f.client.trim() && norm(h.client) === norm(f.client))
   const known = f.client.trim() ? clients.find(c => norm(c.name) === norm(f.client)) : undefined
@@ -176,6 +182,14 @@ function ReqForm({ q, route, history, clients, who, onClose, onDone }: { q: Req 
     const row = { name: ex?.name ?? b.client, contact: b.contact || ex?.contact || '', zone: b.zone || ex?.zone || '', meeting_point: b.meeting_point || ex?.meeting_point || '', machines }
     await (ex ? supabase.from('rt_clients').update(row).eq('id', ex.id) : supabase.from('rt_clients').insert(row))
   }
+  // Lo que se escribe y no estaba en las listas se guarda para la próxima vez
+  async function addCatalog(b: { brand: string; machine: string; model: string }) {
+    const cb = CATALOGO[canon(b.brand)], rows: { kind: string; brand: string; name: string }[] = []
+    if (b.brand && !allBrands.some(m => norm(m) === norm(b.brand))) rows.push({ kind: 'marca', brand: '', name: b.brand })
+    if (b.machine && ![...MAQ_GENERICAS, ...(cb?.maq ?? []), ...catalog.filter(c => c.kind === 'maquina').map(c => c.name)].some(m => norm(m) === norm(b.machine))) rows.push({ kind: 'maquina', brand: '', name: b.machine })
+    if (b.model && b.brand && ![...(cb?.mod ?? []), ...catalog.filter(c => c.kind === 'modelo' && norm(c.brand) === norm(b.brand)).map(c => c.name)].some(m => norm(m) === norm(b.model))) rows.push({ kind: 'modelo', brand: canon(b.brand), name: b.model })
+    if (rows.length) await supabase.from('rt_catalog').insert(rows)
+  }
   async function save() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
     if (!f.job.trim()) return setErr('Escribe el trabajo solicitado.')
@@ -184,15 +198,16 @@ function ReqForm({ q, route, history, clients, who, onClose, onDone }: { q: Req 
     const { error } = q ? await supabase.from('rt_requests').update(body).eq('id', q.id) : await supabase.from('rt_requests').insert({ ...body, created_by_name: who })
     if (error) return setErr(error.message)
     await remember(body)
+    await addCatalog(body)
     onDone(`${q ? 'Editó' : 'Agregó'} la visita: ${body.client}`); onClose()
   }
   const sel = (k: 'warranty' | 'credit') => <select className={inp} value={f[k] ? 'si' : 'no'} onChange={e => setF({ ...f, [k]: e.target.value === 'si' })}><option value="no" className="bg-[#111a2a]">No</option><option value="si" className="bg-[#111a2a]">Sí</option></select>
   return <Modal title={q ? 'Editar solicitud' : 'Nueva solicitud'} sub={route ? `Se agrega a la ruta ${route.number}` : undefined} onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">
     <div className="sm:col-span-2"><Lab t="Cliente"><TextIn value={f.client} onChange={v => set('client', v)} options={uniq([...history.map(h => h.client), ...clients.map(c => c.name)])} onPick={fill} onCommit={fill} placeholder="Escribe una letra y elige" /></Lab></div>
     {combos.length > 0 && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="w-full text-[10px] font-semibold uppercase tracking-wider text-slate-500">Máquinas de este cliente (toca una para llenar los datos)</span>{combos.map((c, i) => { const on = norm(f.brand) === norm(c[0]) && norm(f.machine) === norm(c[1]) && norm(f.model) === norm(c[2]); return <button type="button" key={i} onClick={() => setF(p => ({ ...p, brand: canon(c[0]), machine: c[1], model: c[2] }))} className={`rounded-full border px-3 py-1.5 text-xs ${on ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/15 text-slate-300 hover:border-[#c6ff00]'}`}>{c.filter(Boolean).join(' · ')}</button> })}<button type="button" onClick={() => setF(p => ({ ...p, brand: '', machine: '', model: '' }))} className="rounded-full border border-dashed border-white/20 px-3 py-1.5 text-xs text-slate-400 hover:text-white">+ Otra máquina</button></div>}
-    <Lab t="Marca"><select className={inp} value={f.brand} onChange={e => pickBrand(e.target.value)}><option value="" className="bg-[#111a2a]">Elegir marca…</option>{marcas.map(m => <option key={m} value={m} className="bg-[#111a2a]">{m}</option>)}</select></Lab>
-    <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.filter(sameBrand).map(h => h.machine), ...(cat ? cat.maq : MAQ_GENERICAS), ...history.filter(sameBrand).map(h => h.machine)])} /></Lab>
-    <Lab t={f.brand ? `Modelo (${f.brand})` : 'Modelo'}><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.filter(sameBrand).map(h => h.model), ...history.filter(sameBrand).map(h => h.model), ...(cat ? cat.mod : [])])} /></Lab>
+    <Lab t="Marca">{newB ? <div className="flex items-center gap-2"><div className="flex-1"><TextIn value={f.brand} onChange={v => set('brand', v)} placeholder="Escribe la marca nueva" /></div><button type="button" onClick={() => { setNewB(false); set('brand', '') }} className="shrink-0 text-xs text-slate-400 underline">Ver lista</button></div> : <select className={inp} value={f.brand} onChange={e => e.target.value === '__otra__' ? (setNewB(true), set('brand', '')) : pickBrand(e.target.value)}><option value="" className="bg-[#111a2a]">Elegir marca…</option>{marcas.map(m => <option key={m} value={m} className="bg-[#111a2a]">{m}</option>)}<option value="__otra__" className="bg-[#111a2a]">+ Otra marca (escribir)…</option></select>}</Lab>
+    <Lab t="Máquina"><TextIn value={f.machine} onChange={v => set('machine', v)} options={uniq([...mine.filter(sameBrand).map(h => h.machine), ...(cat ? cat.maq : []), ...MAQ_GENERICAS, ...catMaq, ...history.filter(sameBrand).map(h => h.machine)])} max={40} placeholder="Elige de la lista o escribe" /></Lab>
+    <Lab t={f.brand ? `Modelo (${f.brand})` : 'Modelo'}><TextIn value={f.model} onChange={v => set('model', v)} options={uniq([...mine.filter(sameBrand).map(h => h.model), ...(cat ? cat.mod : []), ...catMod, ...history.filter(sameBrand).map(h => h.model)])} max={40} placeholder="Elige de la lista o escribe" /></Lab>
     <Lab t="Fecha de llamada"><input type="date" className={inp} value={f.call} onChange={e => setF({ ...f, call: e.target.value })} /></Lab>
     <Lab t="Zona"><TextIn value={f.zone} onChange={v => set('zone', v)} options={uniq([...mine.map(h => h.zone), ...history.map(h => h.zone), 'Norte', 'Este', 'Sur', 'Oeste'])} /></Lab>
     <Lab t="Contacto (teléfono y nombre)"><TextIn value={f.contact} onChange={v => set('contact', v)} options={uniq([...mine.map(h => h.contact), ...history.map(h => h.contact)])} /></Lab>
@@ -241,6 +256,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const [routes, setRoutes] = useState<Route[]>([])
   const [reqs, setReqs] = useState<Req[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [catalog, setCatalog] = useState<CatItem[]>([])
   const [shops, setShops] = useState<string[]>([])
   const [reds, setReds] = useState<string[]>([])
   const [tab, setTab] = useState<'semana' | 'rutas' | 'solicitudes' | 'tecnicos'>('semana')
@@ -255,7 +271,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const [err, setErr] = useState('')
 
   const load = useCallback(async () => {
-    const [a, b, c, d, e, f, g] = await Promise.all([
+    const [a, b, c, d, e, f, g, h] = await Promise.all([
       supabase.from('rt_technicians').select('*').order('name'),
       supabase.from('insp_vehicles').select('id,name,plate,driver,area,odometer,km_next').order('plate'),
       supabase.from('rt_routes').select('*').order('number', { ascending: false }),
@@ -263,6 +279,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
       supabase.from('insp_workshop').select('vehicle_id').is('exit_date', null),
       supabase.from('insp_observations').select('vehicle_id').eq('done', false).eq('priority', 'A'),
       supabase.from('rt_clients').select('*').order('name'),
+      supabase.from('rt_catalog').select('*').order('name'),
     ])
     const er = a.error || b.error || c.error || d.error
     if (er) return setErr(er.message)
@@ -271,6 +288,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     setRoutes((c.data ?? []).map(r => ({ ...r, cash: +(r.cash ?? 0), support: r.support ?? [] })) as Route[])
     setReqs((d.data ?? []).map(r => ({ ...r, amount: r.amount == null ? null : +r.amount })) as Req[])
     setClients(g.error ? [] : ((g.data ?? []) as Client[]))
+    setCatalog(h.error ? [] : ((h.data ?? []) as CatItem[]))
     setShops((e.data ?? []).map(r => r.vehicle_id)); setReds((f.data ?? []).map(r => r.vehicle_id)); setErr('')
   }, [])
   useEffect(() => { load() }, [load])
@@ -353,7 +371,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     await log(r.id, `${q.status === 'hecha' ? 'Desmarcó' : 'Marcó como hecha'} la visita: ${q.client}`); load()
   }
 
-  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} clients={clients} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
+  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} clients={clients} catalog={catalog} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
 
   const ctx: Ctx = { techs, vehs, routes, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
   if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />

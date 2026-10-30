@@ -148,7 +148,7 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
 type SK = 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet' | 'job'
 const payChip = (q: Req) => q.pay_status === 'pendiente' ? <Chip c={RED} t="Pendiente de pago" /> : q.pay_status === 'pagado' ? <Chip c={GREEN} t="Pagado" /> : null
 
-function ReqForm({ q, route, history, clients, catalog, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; catalog: CatItem[]; who: string; onClose: () => void; onDone: (what?: string) => void }) {
+function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; catalog: CatItem[]; isAdmin: boolean; who: string; onClose: () => void; onDone: (what?: string) => void }) {
   const assigned = !!(route || q?.route_id)
   const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha', pay: (q?.pay_status ?? '') as '' | 'pendiente' | 'pagado' })
   const [err, setErr] = useState('')
@@ -192,6 +192,13 @@ function ReqForm({ q, route, history, clients, catalog, who, onClose, onDone }: 
     if (b.model && b.brand && ![...(cb?.mod ?? []), ...catalog.filter(c => c.kind === 'modelo' && norm(c.brand) === norm(b.brand)).map(c => c.name)].some(m => norm(m) === norm(b.model))) rows.push({ kind: 'modelo', brand: canon(b.brand), name: b.model })
     if (rows.length) await supabase.from('rt_catalog').insert(rows)
   }
+  async function del() {
+    if (!q || !confirm(`¿Eliminar la solicitud de ${q.client}? No se puede deshacer.`)) return
+    const { data, error } = await supabase.from('rt_requests').delete().eq('id', q.id).select('id')
+    if (error) return setErr(error.message)
+    if (!data?.length) return setErr('No se pudo eliminar: solo el administrador puede hacerlo.')
+    onDone(`Eliminó la solicitud: ${q.client}`); onClose()
+  }
   async function save() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
     if (f.pay === 'pagado' && !f.amount) return setErr('Escribe el monto cancelado.')
@@ -222,7 +229,7 @@ function ReqForm({ q, route, history, clients, catalog, who, onClose, onDone }: 
       </>}
     <Lab t="Estado de pago"><select className={inp} value={f.pay} onChange={e => { const v = e.target.value as '' | 'pendiente' | 'pagado'; setF({ ...f, pay: v, paid: v === 'pagado' ? f.paid || today() : '' }) }}><option value="" className="bg-[#111a2a]">Sin cobro</option><option value="pendiente" className="bg-[#111a2a]">Pendiente de pago</option><option value="pagado" className="bg-[#111a2a]">Pagado</option></select></Lab><Lab t="Monto (Bs)"><input type="number" inputMode="decimal" className={inp} value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></Lab>{f.pay === 'pagado' && <Lab t="Fecha de pago"><input type="date" className={inp} value={f.paid} onChange={e => setF({ ...f, paid: e.target.value })} /></Lab>}
     {err && <p className="text-xs text-red-300 sm:col-span-2">{err}</p>}
-    <div className="flex justify-end gap-2 sm:col-span-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></Modal>
+    <div className="flex items-center justify-end gap-2 sm:col-span-2">{q && isAdmin && <button onClick={del} className="mr-auto rounded-xl border border-red-500/30 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}<button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></Modal>
 }
 
 export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
@@ -363,6 +370,13 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     if (error) return alert(error.message)
     await log(r.id, `Agregó la visita: ${q.client}`); load()
   }
+  async function delReq(q: Req) {
+    if (!confirm(`¿Eliminar la solicitud de ${q.client}? No se puede deshacer.`)) return
+    const { data, error } = await supabase.from('rt_requests').delete().eq('id', q.id).select('id')
+    if (error) return alert(error.message)
+    if (!data?.length) return alert('No se pudo eliminar: solo el administrador puede hacerlo.')
+    load()
+  }
   async function markPaid(q: Req) {
     if (q.amount == null) return setRq({ q, route: routes.find(r => r.id === q.route_id) ?? null })
     const { error } = await supabase.from('rt_requests').update({ pay_status: 'pagado', paid_date: today() }).eq('id', q.id)
@@ -380,7 +394,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     await log(r.id, `${q.status === 'hecha' ? 'Desmarcó' : 'Marcó como hecha'} la visita: ${q.client}`); load()
   }
 
-  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} clients={clients} catalog={catalog} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
+  const modals = <>{tm && <TechForm t={tm === 'new' ? null : tm} onClose={() => setTm(null)} onDone={load} />}{rq && <ReqForm q={rq.q} route={rq.route} history={reqs} clients={clients} catalog={catalog} isAdmin={isAdmin} who={who} onClose={() => setRq(null)} onDone={w => { if (rq.route && w) log(rq.route.id, w); load() }} />}</>
 
   const ctx: Ctx = { techs, vehs, routes, who, techState, vehState, warn, tName, vOf, log, load, open, back: () => setScr('main') }
   if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />
@@ -451,7 +465,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
       {qfilter === 'cobrar' && porCliente.length > 0 && <div className="frost-card mb-3 divide-y divide-white/[0.06]">{porCliente.map(([c, v]) => <div key={c} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"><span className="text-slate-200">{c}<span className="ml-2 text-[11px] text-slate-500">{v.n} visita{v.n === 1 ? '' : 's'}</span></span><b style={{ color: RED }}>{v.t.toLocaleString('es-BO')} Bs</b></div>)}</div>}
       <div className="flex flex-col gap-2">{ql.map(q => { const days = q.call_date ? Math.max(0, Math.round((Date.parse(today()) - Date.parse(q.call_date)) / 864e5)) : null; const r = routes.find(x => x.id === q.route_id)
         return <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">{q.zone}{days != null && ` · llamó hace ${days} día${days === 1 ? '' : 's'}`}{r && ` · ruta ${r.number}`} · {q.status}</p><div className="mt-2 flex flex-wrap items-center gap-2">{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
-          <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => setRq({ q, route: null })} className={btn}>Editar</button>{q.status === 'pendiente' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'cancelada' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Cancelar</button>}{q.status === 'cancelada' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'pendiente' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Reactivar</button>}</div></div> })}
+          <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => setRq({ q, route: null })} className={btn}>Editar</button>{isAdmin && <button onClick={() => delReq(q)} className={btn + ' !border-red-500/30 !text-red-300'}>Eliminar</button>}{q.status === 'pendiente' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'cancelada' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Cancelar</button>}{q.status === 'cancelada' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'pendiente' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Reactivar</button>}</div></div> })}
         {!ql.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay solicitudes.</p>}</div></div>}
 
     {tab === 'tecnicos' && <div><div className="mb-3 flex justify-end"><button onClick={() => setTm('new')} className="flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar técnico</button></div>

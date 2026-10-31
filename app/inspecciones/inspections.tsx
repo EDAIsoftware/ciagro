@@ -105,7 +105,7 @@ function SigPad({ onChange }: { onChange: (d: string) => void }) {
     <button type="button" onClick={() => { ref.current!.getContext('2d')!.clearRect(0, 0, 600, 200); onChange('') }} className="mt-1 text-[11px] text-slate-500 hover:text-white">Borrar firma</button></div>
 }
 
-function Form({ v, kind, who, onClose, onDone }: { v: V; kind: Kind; who: string; onClose: () => void; onDone: (id: string) => void }) {
+function Form({ v, kind, who, hand0, onClose, onDone }: { v: V; kind: Kind; who: string; hand0?: boolean; onClose: () => void; onDone: (id: string) => void }) {
   const groups = kind === 'inspeccion' ? INSP : kind === 'taller' ? TALLER : RECEP
   const all = groups.flatMap(g => g[1])
   const [h, setH] = useState({ date: today(), place: 'CIAGRO', km: '', driver: v.driver, tipo: 'Camioneta', pasajeros: '', interno: '', responsable: v.driver, notes: '' })
@@ -116,7 +116,7 @@ function Form({ v, kind, who, onClose, onDone }: { v: V; kind: Kind; who: string
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [obs, setObs] = useState<{ id: number; text: string; p: Pri }[]>([])
-  const [hand, setHand] = useState(false)
+  const [hand, setHand] = useState(!!hand0)
   const [rcv, setRcv] = useState('')
   const [dlv, setDlv] = useState(v.driver)
   const p = (k: keyof typeof h, type = 'text') => ({ type, value: h[k], className: inp, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setH({ ...h, [k]: e.target.value }) })
@@ -448,7 +448,7 @@ function Menu({ items }: { items: [string, () => void][] }) {
     {open && <><div className="fixed inset-0 z-10" onClick={() => setOpen(false)} /><div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#111a2a] shadow-xl">{items.map(([l, f]) => <button key={l} onClick={() => { setOpen(false); f() }} className="block w-full px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/5">{l}</button>)}</div></>}</div>
 }
 
-function Hoy({ vs, ins, reqs, obs, wk, who, otherOverdue, onReload, openRep, onStart, openPend }: { vs: V[]; ins: Insp[]; reqs: Req[]; obs: Obs[]; wk: Work[]; who: string; otherOverdue: number; onReload: () => void; openRep: (id: string) => void; onStart: (v: V, k: Kind) => void; openPend: () => void }) {
+function Hoy({ vs, ins, reqs, obs, wk, who, otherOverdue, onReload, openRep, onStart, openPend }: { vs: V[]; ins: Insp[]; reqs: Req[]; obs: Obs[]; wk: Work[]; who: string; otherOverdue: number; onReload: () => void; openRep: (id: string) => void; onStart: (v: V, k: Kind, hand?: boolean) => void; openPend: () => void }) {
   const [f, setF] = useState<'todas' | 'falta' | 'pedida' | 'hecha'>('todas')
   const [q, setQ] = useState('')
   const cur = period()
@@ -473,7 +473,7 @@ function Hoy({ vs, ins, reqs, obs, wk, who, otherOverdue, onReload, openRep, onS
     <div className="relative"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar placa o responsable…" className={inp} style={{ paddingLeft: 40 }} /></div>
     <div className="mt-3 flex flex-col gap-2">{rows.map(({ v, last, r, st }) => <div key={v.id} className={`frost-card flex flex-wrap items-center justify-between gap-3 p-3.5 ${st === 'hecha' ? 'opacity-60' : ''}`}>
       <div className="min-w-0"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}{st === 'pedida' && r && <span style={{ color: AMBER }}> · pedida el {fmtD(r.requested_at)}</span>}{st === 'hecha' && <span style={{ color: GREEN }}> · hecha</span>}</p></div>
-      <div className="flex items-center gap-3">{st === 'hecha' ? (last && <button onClick={() => openRep(last.id)} className="text-xs text-slate-400 underline hover:text-white">Ver informe</button>) : <><button onClick={() => toggle(v, !!r)} className="text-xs text-slate-400 underline hover:text-white">{r ? 'Quitar pedido' : 'Ya la pedí'}</button><button onClick={() => onStart(v, 'inspeccion')} className="h-9 rounded-lg px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Inspeccionar</button></>}</div></div>)}
+      <div className="flex items-center gap-3">{st === 'hecha' ? (last && <button onClick={() => openRep(last.id)} className="text-xs text-slate-400 underline hover:text-white">Ver informe</button>) : <><button onClick={() => toggle(v, !!r)} className="text-xs text-slate-400 underline hover:text-white">{r ? 'Quitar pedido' : 'Ya la pedí'}</button><button onClick={() => onStart(v, 'inspeccion')} className="h-9 rounded-lg px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Inspeccionar</button></>}<Menu items={st === 'hecha' ? [['Hacer otra inspección', () => onStart(v, 'inspeccion')], ['Entrega de camioneta (firmas)', () => onStart(v, 'inspeccion', true)], ['Recepción', () => onStart(v, 'recepcion')]] : [['Entrega de camioneta (firmas)', () => onStart(v, 'inspeccion', true)], ['Recepción', () => onStart(v, 'recepcion')]]} /></div></div>)}
       {!rows.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay camionetas con ese filtro.</p>}</div>
     {vs.length > quin.length && <p className="mt-3 text-center text-[11px] text-slate-600">No incluye {vs.length - quin.length} camioneta(s) con inspección mensual o sin recordatorio. Están en Camionetas.</p>}
   </div>
@@ -531,6 +531,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const [scr, setScr] = useState<'list' | 'form' | 'hist' | 'rep' | 'matrix' | 'pend' | 'wform' | 'work'>('list')
   const [cur, setCur] = useState<V | null>(null)
   const [kind, setKind] = useState<Kind>('inspeccion')
+  const [hand0, setHand0] = useState(false)
   const [full, setFull] = useState<Insp | null>(null)
   const [vm, setVm] = useState<V | 'new' | null>(null)
   const [own, setOwn] = useState<V | null>(null)
@@ -581,7 +582,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
     return d > lim ? { c: RED, t: `Vencida · ${t}${tag}`, l } : d >= soon ? { c: AMBER, t: `Vence pronto · ${t}${tag}`, l } : { c: GREEN, t: `Al día · ${t}${tag}`, l }
   }
   const vOf = (id: string) => vs.find(x => x.id === id)
-  const start = (v: V, k: Kind) => { setCur(v); setKind(k); setScr('form') }
+  const start = (v: V, k: Kind, h = false) => { setCur(v); setKind(k); setHand0(h); setScr('form') }
   const areas = [...new Set(vs.map(v => v.area).filter(Boolean))].sort()
   const words = plain(q).split(/\s+/).filter(Boolean)
   const shown = vs.filter(v => (!area || v.area === area) && (!words.length || words.every(w => plain(`${v.plate} ${v.driver} ${v.name} ${v.area}`).includes(w))))
@@ -591,7 +592,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
   const nv = scr === 'rep' && full?.kind === 'inspeccion' ? nextV(full.vehicle_id) : undefined
   const otherOverdue = vs.filter(v => (v.insp_freq ?? 'quincenal') !== 'quincenal' && status(v.id).c === RED).length
 
-  if (scr === 'form' && cur) return <Form v={cur} kind={kind} who={who} onClose={() => setScr('list')} onDone={id => { load(); openRep(id) }} />
+  if (scr === 'form' && cur) return <Form key={`${cur.id}-${kind}-${hand0}`} v={cur} kind={kind} who={who} hand0={hand0} onClose={() => setScr('list')} onDone={id => { load(); openRep(id) }} />
   if (scr === 'rep' && full) return <Report i={full} v={vOf(full.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onDelete={isAdmin ? () => delInsp(full) : undefined} onNext={nv ? () => start(nv, 'inspeccion') : undefined} nextLabel={nv ? `Siguiente: ${nv.plate} →` : undefined} onSigned={() => openRep(full.id)} />
   if (scr === 'wform' && cur) return <WorkForm v={cur} who={who} obs={obs} onClose={() => setScr('list')} onDone={id => { load(); openWorkId(id) }} />
   if (scr === 'work' && wfull) return <WorkReport w={wfull} v={vOf(wfull.vehicle_id)} onBack={() => setScr(cur ? 'hist' : 'list')} onChanged={() => { load(); openWorkId(wfull.id) }} onDelete={isAdmin ? () => delWork(wfull) : undefined} />
@@ -613,7 +614,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
     {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste los archivos .sql en Supabase?</p>}
     <div className="mb-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>)}</div>
 
-    {tab === 'hoy' && <Hoy vs={vs} ins={ins} reqs={reqs} obs={obs} wk={wk} who={who} otherOverdue={otherOverdue} onReload={load} openRep={id => { setCur(null); openRep(id) }} onStart={(v, k) => start(v, k)} openPend={() => setScr('pend')} />}
+    {tab === 'hoy' && <Hoy vs={vs} ins={ins} reqs={reqs} obs={obs} wk={wk} who={who} otherOverdue={otherOverdue} onReload={load} openRep={id => { setCur(null); openRep(id) }} onStart={(v, k, h) => start(v, k, h)} openPend={() => setScr('pend')} />}
 
     {tab === 'veh' && <div>
       <div className="mb-3 flex items-center gap-2"><div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por placa, responsable o marca…" className={inp} style={{ paddingLeft: 40 }} /></div>{isAdmin && <button onClick={() => setVm('new')} className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar</button>}</div>
@@ -621,7 +622,7 @@ export default function Inspections({ isAdmin, who }: { isAdmin: boolean; who: s
       {!shown.length && !err && <p className="frost-card p-8 text-center text-sm text-slate-500">{q || area ? 'Sin resultados con ese filtro.' : <>No hay vehículos. {isAdmin ? 'Agrega el primero.' : 'Pide a un administrador que los registre.'}</>}</p>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{shown.map(v => { const s = status(v.id); const mo = obs.filter(o => o.vehicle_id === v.id)
         const left = v.km_next != null ? v.km_next - v.odometer : null; const mc = left == null ? '' : left <= 1000 ? RED : AMBER
-        const items: [string, () => void][] = [['Ingreso a taller', () => { setCur(v); setScr('wform') }], ['Recepción', () => start(v, 'recepcion')], ['Historial e informes', () => { setCur(v); setScr('hist') }], ...(isAdmin ? ([['Cambiar dueño', () => setOwn(v)], ['Mantenimiento', () => setMt(v)], ['Editar vehículo', () => setVm(v)]] as [string, () => void][]) : [])]
+        const items: [string, () => void][] = [['Ingreso a taller', () => { setCur(v); setScr('wform') }], ['Entrega de camioneta (firmas)', () => start(v, 'inspeccion', true)], ['Recepción', () => start(v, 'recepcion')], ['Historial e informes', () => { setCur(v); setScr('hist') }], ...(isAdmin ? ([['Cambiar dueño', () => setOwn(v)], ['Mantenimiento', () => setMt(v)], ['Editar vehículo', () => setVm(v)]] as [string, () => void][]) : [])]
         return <div key={v.id} className="frost-card p-4"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{v.driver}{v.area && ` · ${v.area}`}</p></div><div className="flex shrink-0 gap-1">{(['A', 'M', 'B'] as Pri[]).map(k => { const c = mo.filter(o => o.priority === k).length; return c > 0 && <span key={k} className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: PRI[k].c, color: k === 'M' ? '#000' : '#fff' }}>{c}</span> })}</div></div>
           <p className="mt-3 flex items-center gap-2 text-xs font-semibold" style={{ color: s.c }}><span className="size-2 rounded-full" style={{ background: s.c }} />{s.t}</p>
           {left != null && left <= 2000 && <p className="mt-1 text-[11px]" style={{ color: mc }}>Mantenimiento: {left > 0 ? `faltan ${left.toLocaleString('es-BO')} km` : `pasado por ${Math.abs(left).toLocaleString('es-BO')} km`}</p>}

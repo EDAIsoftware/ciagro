@@ -71,7 +71,7 @@ export function buildHojaXlsx(routes: HRoute[]): Blob {
   const sheets: { name: string; xml: string }[] = []
   const used = new Set<string>()
   for (const r of routes) {
-    const vs = [...r.visits].sort((a, b) => (a.visitDate ?? '9').localeCompare(b.visitDate ?? '9'))
+    const vs = r.visits
     const parts = Math.max(1, Math.ceil(vs.length / 6))
     for (let p = 0; p < parts; p++) {
       let name = `${r.number}-${short(r.tech)}${p ? ` (${p + 1})` : ''}`.replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31)

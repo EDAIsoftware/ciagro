@@ -8,7 +8,7 @@ import { buildHojaXlsx, type HRoute } from '@/lib/hoja-xlsx'
 export type Tech = { id: string; name: string; area: string; phone: string; active: boolean; off_from: string | null; off_to: string | null; off_reason: string }
 export type Veh = { id: string; name: string; plate: string; driver: string; area: string; odometer: number; km_next: number | null }
 export type Route = { id: string; number: number; year: number; week: number; tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; depart_time: string | null; return_date: string | null; cash: number; work_days: number | null; status: 'borrador' | 'confirmada' | 'cerrada'; notes: string; created_by_name: string; created_at: string }
-export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; pay_status?: '' | 'pendiente' | 'pagado'; notes: string; created_by_name: string; created_at: string }
+export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; pay_status?: '' | 'pendiente' | 'pagado'; pos?: number; notes: string; created_by_name: string; created_at: string }
 export type Client = { id: string; name: string; contact: string; zone: string; meeting_point: string; machines: { brand: string; machine: string; model: string }[] }
 type Change = { id: string; who: string; what: string; at: string }
 type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; return_date: string | null }
@@ -16,6 +16,8 @@ type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | n
 const GREEN = '#c6ff00', AMBER = '#ff8a00', RED = '#ef4444', VIOLET = '#a78bfa'
 const PRI = ['', '#ff0000', '#ffd400', '#34a853']
 const PRIL = ['', 'Alta', 'Normal', 'Baja']
+// Orden de las visitas en la ruta y en el documento: primero el orden manual (si se movieron), luego prioridad 1, 2, 3 y fecha de visita
+const byOrder = (a: Req, b: Req) => Number(!((a.pos ?? 0) > 0)) - Number(!((b.pos ?? 0) > 0)) || (a.pos ?? 0) - (b.pos ?? 0) || a.priority - b.priority || (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9') || a.client.localeCompare(b.client)
 const inp = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#00d2ff]'
 const btn = 'h-9 rounded-lg border border-white/15 px-3 text-xs font-semibold text-slate-300 hover:bg-white/5'
 const DN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -236,7 +238,7 @@ export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs:
   const nm = (id?: string | null) => techs.find(t => t.id === id)?.name ?? '—'
   const cell = 'border border-gray-400 px-2 py-2 align-top'
   useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SA`; return () => { document.title = t } }, [r.number])
-  const rows = [...visits].sort((a, b) => (a.visit_date ?? '9').localeCompare(b.visit_date ?? '9'))
+  const rows = [...visits].sort(byOrder)
   return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-wrap{overflow:visible!important;padding:11mm!important;border-radius:0!important;font-size:13px!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:10.5px!important}.rs-table td{height:12mm}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
     <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-6 text-[14px] text-black">
@@ -256,7 +258,7 @@ function toHojaRoutes(rs: Route[], techs: Tech[], vehs: Veh[], reqs: Req[]): HRo
   return [...rs].sort((x, y) => x.number - y.number).map(r => ({
     week: r.week, year: r.year, number: r.number, tech: nm(r.tech_id), support: r.support.map(nm).join(' - '), plate: vehs.find(v => v.id === r.vehicle_id)?.plate ?? '',
     departDate: r.depart_date, departTime: r.depart_time, returnDate: r.return_date, cash: r.cash, workDays: r.work_days,
-    visits: reqs.filter(q => q.route_id === r.id && q.status !== 'cancelada').map(q => ({ client: U(q.client), brand: U(q.brand), machine: U(q.machine), model: U(q.model), callDate: q.call_date, zone: U(q.zone), contact: U(q.contact), meet: U(q.meeting_point), job: U(q.job), warranty: q.warranty, credit: q.credit, priority: q.priority, amount: q.pay_status === 'pendiente' ? null : q.amount, paidDate: q.paid_date, visitDate: q.visit_date })),
+    visits: reqs.filter(q => q.route_id === r.id && q.status !== 'cancelada').sort(byOrder).map(q => ({ client: U(q.client), brand: U(q.brand), machine: U(q.machine), model: U(q.model), callDate: q.call_date, zone: U(q.zone), contact: U(q.contact), meet: U(q.meeting_point), job: U(q.job), warranty: q.warranty, credit: q.credit, priority: q.priority, amount: q.pay_status === 'pendiente' ? null : q.amount, paidDate: q.paid_date, visitDate: q.visit_date })),
   }))
 }
 function download(name: string, blob: Blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click() }
@@ -352,7 +354,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     if (st === 'cerrada') {
       const open = reqs.filter(q => q.route_id === r.id && q.status === 'asignada')
       if (!confirm(open.length ? `Hay ${open.length} visita(s) sin marcar como hechas: volverán a pendientes. ¿Cerrar la ruta?` : '¿Cerrar la ruta?')) return
-      if (open.length) await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null }).eq('route_id', r.id).eq('status', 'asignada')
+      if (open.length) await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null, pos: 0 }).eq('route_id', r.id).eq('status', 'asignada')
     }
     const { error } = await supabase.from('rt_routes').update({ status: st }).eq('id', r.id)
     if (error) return alert(error.message)
@@ -360,13 +362,13 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   }
   async function delRoute(r: Route) {
     if (!confirm(`¿Eliminar la ruta ${r.number}? Las visitas asignadas vuelven a pendientes.`)) return
-    await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null }).eq('route_id', r.id).in('status', ['asignada'])
+    await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null, pos: 0 }).eq('route_id', r.id).in('status', ['asignada'])
     const { error } = await supabase.from('rt_routes').delete().eq('id', r.id)
     if (error) return alert(error.message)
     setScr('main'); setRid(null); load()
   }
   async function attach(r: Route, q: Req, date: string) {
-    const { error } = await supabase.from('rt_requests').update({ route_id: r.id, status: 'asignada', visit_date: date || r.depart_date }).eq('id', q.id)
+    const { error } = await supabase.from('rt_requests').update({ route_id: r.id, status: 'asignada', visit_date: date || r.depart_date, pos: 0 }).eq('id', q.id)
     if (error) return alert(error.message)
     await log(r.id, `Agregó la visita: ${q.client}`); load()
   }
@@ -382,9 +384,30 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     const { error } = await supabase.from('rt_requests').update({ pay_status: 'pagado', paid_date: today() }).eq('id', q.id)
     error ? alert(error.message) : load()
   }
+  async function move(r: Route, q: Req, dir: -1 | 1) {
+    const list = reqs.filter(x => x.route_id === r.id).sort(byOrder)
+    const i = list.findIndex(x => x.id === q.id), j = i + dir
+    if (i < 0 || j < 0 || j >= list.length) return
+    ;[list[i], list[j]] = [list[j], list[i]]
+    const res = await Promise.all(list.map((x, k) => (x.pos ?? 0) === k + 1 ? null : supabase.from('rt_requests').update({ pos: k + 1 }).eq('id', x.id)))
+    const bad = res.find(x => x?.error)
+    if (bad?.error) return alert(bad.error.message)
+    await log(r.id, 'Cambió el orden de las visitas'); load()
+  }
+  async function autoOrder(r: Route) {
+    const { error } = await supabase.from('rt_requests').update({ pos: 0 }).eq('route_id', r.id)
+    if (error) return alert(error.message)
+    await log(r.id, 'Ordenó las visitas por prioridad'); load()
+  }
+  async function setPriority(r: Route, q: Req, n: number) {
+    if (q.priority === n) return
+    const { error } = await supabase.from('rt_requests').update({ priority: n }).eq('id', q.id)
+    if (error) return alert(error.message)
+    await log(r.id, `Cambió la prioridad de ${q.client} a ${n}`); load()
+  }
   async function detach(r: Route, q: Req) {
     if (!confirm(`¿Quitar "${q.client}" de la ruta? Vuelve a pendientes.`)) return
-    const { error } = await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null }).eq('id', q.id)
+    const { error } = await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null, pos: 0 }).eq('id', q.id)
     if (error) return alert(error.message)
     await log(r.id, `Quitó la visita: ${q.client}`); load()
   }
@@ -400,7 +423,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   if (scr === 'rform') return <RouteForm r={route && rid ? route : null} c={ctx} />
   if (scr === 'sheet' && route) return <RouteSheet r={route} techs={techs} veh={vOf(route.vehicle_id)} visits={reqs.filter(q => q.route_id === route.id && q.status !== 'cancelada')} onBack={() => setScr('detail')} />
   if (scr === 'detail' && route) {
-    const visits = reqs.filter(q => q.route_id === route.id).sort((a, b) => (a.visit_date ?? '').localeCompare(b.visit_date ?? ''))
+    const visits = reqs.filter(q => q.route_id === route.id).sort(byOrder)
     const pend = reqs.filter(q => q.status === 'pendiente')
     const st = { borrador: ['Borrador', '#94a3b8'], confirmada: ['Confirmada', GREEN], cerrada: ['Cerrada', '#64748b'] }[route.status]
     return <div className="no-print mx-auto max-w-3xl">
@@ -418,8 +441,10 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         <button onClick={async () => { const { error } = await supabase.from('rt_print_jobs').insert({ route_id: route.id, requested_by_name: who }); alert(error ? error.message : 'Enviada a la impresora de la oficina. Sale en unos segundos si la computadora de impresión está encendida.') }} className={btn}>Enviar a la impresora de la oficina</button>
         {isAdmin && <button onClick={() => delRoute(route)} className="h-9 rounded-lg border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}
       </div>
-      <div className="mt-8 flex items-center justify-between"><h3 className="text-lg font-semibold text-white">Visitas ({visits.length})</h3>{route.status !== 'cerrada' && <button onClick={() => setRq({ q: null, route })} className="flex items-center gap-1.5 text-xs text-[#c6ff00]"><Plus className="size-4" />Nueva visita</button>}</div>
-      <div className="mt-3 flex flex-col gap-2">{visits.map(q => <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3 pr-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">Visita {fmtD(q.visit_date)} · {q.zone}{q.meeting_point && ` · ${q.meeting_point}`}{q.contact && ` · ${q.contact}`}</p><div className="mt-2 flex flex-wrap items-center gap-2">{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{q.status === 'hecha' && <Chip c={GREEN} t="Hecha" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
+      <div className="mt-8 flex items-center justify-between"><h3 className="text-lg font-semibold text-white">Visitas ({visits.length})</h3><div className="flex items-center gap-4">{route.status !== 'cerrada' && visits.some(q => (q.pos ?? 0) > 0) && <button onClick={() => autoOrder(route)} className="text-xs text-slate-400 underline hover:text-white">Ordenar por prioridad</button>}{route.status !== 'cerrada' && <button onClick={() => setRq({ q: null, route })} className="flex items-center gap-1.5 text-xs text-[#c6ff00]"><Plus className="size-4" />Nueva visita</button>}</div></div>
+      {visits.length > 1 && <p className="mt-1 text-[11px] text-slate-500">Así saldrán en la hoja: primero la prioridad 1. Usa ▲ ▼ para cambiar el orden o toca 1, 2, 3 para cambiar la prioridad.</p>}
+      <div className="mt-3 flex flex-col gap-2">{visits.map((q, qi) => <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3 pr-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">Visita {fmtD(q.visit_date)} · {q.zone}{q.meeting_point && ` · ${q.meeting_point}`}{q.contact && ` · ${q.contact}`}</p><div className="mt-2 flex flex-wrap items-center gap-2">{route.status !== 'cerrada' && <span className="flex items-center gap-1 text-[11px] text-slate-500">Prioridad{[1, 2, 3].map(n => <button key={n} onClick={() => setPriority(route, q, n)} aria-label={`Prioridad ${n}`} className="size-6 rounded-md border text-[11px] font-bold" style={q.priority === n ? { background: PRI[n], borderColor: PRI[n], color: n === 2 ? '#000' : '#fff' } : { borderColor: 'rgba(255,255,255,.15)', color: '#94a3b8' }}>{n}</button>)}</span>}{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{q.status === 'hecha' && <Chip c={GREEN} t="Hecha" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
+        {route.status !== 'cerrada' && visits.length > 1 && <div className="flex shrink-0 flex-col justify-center gap-1.5 py-3"><button onClick={() => move(route, q, -1)} disabled={qi === 0} aria-label="Subir" className="grid size-9 place-items-center rounded-lg border border-white/15 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-25">▲</button><button onClick={() => move(route, q, 1)} disabled={qi === visits.length - 1} aria-label="Bajar" className="grid size-9 place-items-center rounded-lg border border-white/15 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-25">▼</button></div>}
         {route.status !== 'cerrada' && <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => toggleDone(route, q)} className={btn}>{q.status === 'hecha' ? 'Deshacer' : 'Hecha'}</button><button onClick={() => setRq({ q, route })} className={btn}>Editar</button><button onClick={() => detach(route, q)} className={btn}>Quitar</button></div>}</div>)}
         {!visits.length && <p className="frost-card p-6 text-center text-sm text-slate-500">Esta ruta todavía no tiene visitas.</p>}</div>
       {route.status !== 'cerrada' && pend.length > 0 && <AttachRow route={route} pend={pend} onAttach={attach} />}

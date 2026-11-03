@@ -572,3 +572,7 @@ do $$ begin
 end $$;
 alter table rt_requests drop constraint if exists rt_requests_pay_status_check;
 alter table rt_requests add constraint rt_requests_pay_status_check check (pay_status in ('', 'pendiente', 'pagado'));
+
+-- ============ orden.sql ============
+-- EDAI · Orden manual de las visitas dentro de una ruta (0 = automático por prioridad). Seguro de repetir.
+alter table rt_requests add column if not exists pos int not null default 0;

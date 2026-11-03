@@ -576,3 +576,7 @@ alter table rt_requests add constraint rt_requests_pay_status_check check (pay_s
 -- ============ orden.sql ============
 -- EDAI · Orden manual de las visitas dentro de una ruta (0 = automático por prioridad). Seguro de repetir.
 alter table rt_requests add column if not exists pos int not null default 0;
+
+-- ============ transporte.sql ============
+-- EDAI · Una ruta puede hacerse en Bus (sin camioneta). Seguro de repetir.
+alter table rt_routes add column if not exists transport text not null default '';

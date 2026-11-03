@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { buildHojaXlsx, type HRoute } from '@/lib/hoja-xlsx'
@@ -236,19 +236,37 @@ function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, o
 
 export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
   const nm = (id?: string | null) => techs.find(t => t.id === id)?.name ?? '—'
-  const cell = 'border border-gray-400 px-2 py-2 align-top'
+  const cell = 'border border-gray-400 px-1.5 py-1 align-top'
+  const inner = useRef<HTMLDivElement>(null)
   useEffect(() => { const t = document.title; document.title = `Ruta ${r.number} - CIAGRO SA`; return () => { document.title = t } }, [r.number])
   const rows = [...visits].sort(byOrder)
-  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-wrap{overflow:visible!important;padding:11mm!important;border-radius:0!important;font-size:13px!important}.rs-table{min-width:0!important;width:100%!important;table-layout:fixed!important;font-size:10.5px!important}.rs-table td{height:12mm}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
+  // Ajusta el contenido para que siempre entre en UNA sola hoja (si hay muchas visitas o textos largos, lo reduce un poco)
+  const fit = useCallback(() => {
+    const el = inner.current
+    if (!el) return
+    el.style.zoom = '1'
+    const avail = (195 * 96) / 25.4, h = el.scrollHeight
+    el.style.zoom = h > avail ? String(Math.max(0.4, avail / h)) : '1'
+  }, [])
+  useEffect(() => {
+    fit(); const t = setTimeout(fit, 300)
+    window.addEventListener('beforeprint', fit)
+    return () => { clearTimeout(t); window.removeEventListener('beforeprint', fit) }
+  }, [fit, r, visits])
+  return <div><style>{'@media print{@page{size:landscape;margin:0}.print-root{padding:0!important}.print-root>div{padding:0!important;max-width:none!important;margin:0!important}.shell-body{padding:0!important;max-width:none!important}.rs-outer{overflow:visible!important;padding:0!important;background:#fff!important;border-radius:0!important}.rs-paper{margin:0 auto!important}.rs-table td,.rs-table th{word-break:break-word}.keep-bg{background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}'}</style>
     <div className="no-print mb-4 flex items-center gap-2"><button onClick={onBack} className="mr-auto flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button><button onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Printer className="size-4" />Imprimir / PDF</button></div>
-    <div className="rs-wrap overflow-x-auto rounded-lg bg-white p-6 text-[14px] text-black">
-      <div className="mb-4 flex items-end justify-between border-b-2 border-black pb-3"><p className="text-2xl font-bold tracking-[0.15em]">CIAGRO SA</p><h1 className="text-xl font-bold uppercase">Ruta de trabajo</h1><p className="text-base">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
-      <div className="grid gap-x-8 sm:grid-cols-2">{[['Técnico asignado', nm(r.tech_id)], ['Salida (fecha / hora)', `${fmtD(r.depart_date)} ${r.depart_time ? r.depart_time.slice(0, 5) : ''}`], ['Técnico de apoyo', r.support.length ? r.support.map(nm).join(' - ') : '-'], ['Retorno estimado', fmtD(r.return_date)], ['Vehículo (placa)', veh ? `${veh.plate} · ${veh.name}` : '—'], ['Efectivo asignado (Bs)', r.cash.toLocaleString('es-BO')], ['Responsable de la camioneta', veh?.driver || '—'], ['Días laborales', String(r.work_days ?? '-')]].map(([a, b]) => <div key={a} className="flex gap-2 border-b border-gray-300 py-1.5"><span className="w-52 shrink-0 font-semibold">{a}</span><span>{b}</span></div>)}</div>
-      <p className="mb-1.5 mt-4 text-xs">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
-      <table className="rs-table w-full min-w-[1100px] border-collapse text-[12.5px]"><colgroup>{[3, 9, 6, 6, 6, 6, 5, 8, 10, 14, 4, 4, 3.5, 5, 5, 5.5].map((w, i) => <col key={i} style={{ width: w + '%' }} />)}</colgroup><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
-        <tbody>{Array.from({ length: Math.max(6, rows.length) }, (_, i) => { const v = rows[i]; return <tr key={i}><td className={cell}>{i + 1}</td>{v ? <><td className={cell}>{v.client}</td><td className={cell}>{v.brand}</td><td className={cell}>{v.machine}</td><td className={cell}>{v.model}</td><td className={cell}>{fmtD(v.call_date)}</td><td className={cell}>{v.zone}</td><td className={cell}>{v.contact}</td><td className={cell}>{v.meeting_point}</td><td className={cell + ' whitespace-pre-wrap'}>{v.job}</td><td className={cell}>{v.warranty ? 'SI' : 'NO'}</td><td className={cell}>{v.credit ? 'SI' : 'NO'}</td><td className={cell + ' keep-bg text-center font-bold'} style={{ '--bg': PRI[v.priority], background: PRI[v.priority] } as React.CSSProperties}>{v.priority}</td><td className={cell}>{v.amount != null && v.pay_status !== 'pendiente' ? v.amount.toLocaleString('es-BO') : '-'}</td><td className={cell}>{v.paid_date ? fmtD(v.paid_date) : '-'}</td><td className={cell}>{fmtD(v.visit_date)}</td></> : Array.from({ length: 15 }, (_, k) => <td key={k} className={cell}>&nbsp;</td>)}</tr> })}</tbody></table>
-      {r.notes && <p className="mt-4"><b>Observaciones:</b> {r.notes}</p>}
-      <div className="mt-16 grid grid-cols-3 gap-12 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1.5"><b>{n}</b><br /><span className="text-xs">{c}</span></div>)}</div>
+    <div className="rs-outer overflow-x-auto rounded-lg bg-[#1a2130] p-3">
+      <div className="rs-paper mx-auto overflow-hidden bg-white text-black" style={{ width: '279mm', height: '209mm', padding: '7mm 9mm', boxSizing: 'border-box' }}>
+        <div ref={inner} style={{ width: '261mm', margin: '0 auto', fontSize: 13 }}>
+          <div className="mb-3 flex items-end justify-between border-b-2 border-black pb-2"><p className="text-2xl font-bold tracking-[0.15em]">CIAGRO SA</p><h1 className="text-xl font-bold uppercase">Ruta de trabajo</h1><p className="text-base">Semana <b>{r.week}</b> · Año <b>{r.year}</b> · Nº <b>{r.number}</b></p></div>
+          <div className="grid grid-cols-2 gap-x-8">{[['Técnico asignado', nm(r.tech_id)], ['Salida (fecha / hora)', `${fmtD(r.depart_date)} ${r.depart_time ? r.depart_time.slice(0, 5) : ''}`], ['Técnico de apoyo', r.support.length ? r.support.map(nm).join(' - ') : '-'], ['Retorno estimado', fmtD(r.return_date)], ['Vehículo (placa)', veh ? `${veh.plate} · ${veh.name}` : '—'], ['Efectivo asignado (Bs)', r.cash.toLocaleString('es-BO')], ['Responsable de la camioneta', veh?.driver || '—'], ['Días laborales', String(r.work_days ?? '-')]].map(([x, y]) => <div key={x} className="flex gap-2 border-b border-gray-300 py-1"><span className="w-52 shrink-0 font-semibold">{x}</span><span>{y}</span></div>)}</div>
+          <p className="mb-1 mt-2 text-xs">Prioridad: 1 = Alta / 2 = Normal / 3 = Baja</p>
+          <table className="rs-table w-full border-collapse" style={{ tableLayout: 'fixed', fontSize: 11 }}><colgroup>{[3, 9, 6, 6, 6, 6, 5, 8, 10, 14, 4, 4, 3.5, 5, 5, 5.5].map((w, i) => <col key={i} style={{ width: w + '%' }} />)}</colgroup><thead><tr className="bg-gray-200">{['Nº', 'Cliente', 'Marca', 'Máquina', 'Modelo', 'F. llamada', 'Zona', 'Contacto', 'Punto de encuentro', 'Trabajo solicitado', 'Garantía', 'Crédito', 'Prior.', 'Monto Bs', 'F. pago', 'F. visita'].map(h => <th key={h} className={cell + ' text-left'}>{h}</th>)}</tr></thead>
+            <tbody>{Array.from({ length: Math.max(5, rows.length) }, (_, i) => { const v = rows[i]; return <tr key={i} style={{ height: '8.5mm' }}><td className={cell}>{i + 1}</td>{v ? <><td className={cell}>{v.client}</td><td className={cell}>{v.brand}</td><td className={cell}>{v.machine}</td><td className={cell}>{v.model}</td><td className={cell}>{fmtD(v.call_date)}</td><td className={cell}>{v.zone}</td><td className={cell}>{v.contact}</td><td className={cell}>{v.meeting_point}</td><td className={cell + ' whitespace-pre-wrap'}>{v.job}</td><td className={cell}>{v.warranty ? 'SI' : 'NO'}</td><td className={cell}>{v.credit ? 'SI' : 'NO'}</td><td className={cell + ' keep-bg text-center font-bold'} style={{ '--bg': PRI[v.priority], background: PRI[v.priority] } as React.CSSProperties}>{v.priority}</td><td className={cell}>{v.amount != null && v.pay_status !== 'pendiente' ? v.amount.toLocaleString('es-BO') : '-'}</td><td className={cell}>{v.paid_date ? fmtD(v.paid_date) : '-'}</td><td className={cell}>{fmtD(v.visit_date)}</td></> : Array.from({ length: 15 }, (_, k) => <td key={k} className={cell}>&nbsp;</td>)}</tr> })}</tbody></table>
+          {r.notes && <p className="mt-2"><b>Observaciones:</b> {r.notes}</p>}
+          <div className="mt-10 grid grid-cols-3 gap-12 text-center">{FIRMAS.map(([n, c]) => <div key={n} className="border-t border-black pt-1"><b>{n}</b><br /><span className="text-xs">{c}</span></div>)}</div>
+        </div>
+      </div>
     </div></div>
 }
 

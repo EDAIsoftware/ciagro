@@ -1,7 +1,7 @@
 export type Fuel = 'Diésel' | 'Gasolina'
 export type Vehicle = { id: string; name: string; plate: string; type: Fuel; driver: string; odometer: number; kmpl: number | null; opening: number }
 export type Load = { id: string; vehicleId: string; date: string; liters: number; cost: number; invoice: string; odometer: number; driver: string }
-export type Transfer = { id: string; vehicleId: string; datetime: string; liters: number; equipment: string; person: string; notes: string }
+export type Transfer = { id: string; exitNo: string; vehicleId: string; datetime: string; liters: number; equipment: string; person: string; notes: string }
 export type DB = { vehicles: Vehicle[]; loads: Load[]; transfers: Transfer[] }
 
 export const EQUIPMENT = ['Taller', 'Maquinaria', 'Insumos', 'Comercial', 'Sucursal', 'Total Agro']
@@ -28,7 +28,7 @@ export async function fetchDB(): Promise<DB> {
   return {
     vehicles: v.data!.map(r => ({ id: r.id, name: r.name, plate: r.plate, type: r.type, driver: r.driver, odometer: +r.odometer, kmpl: r.kmpl == null ? null : +r.kmpl, opening: +(r.opening_liters ?? 0) })),
     loads: l.data!.map(r => ({ id: r.id, vehicleId: r.vehicle_id, date: r.date, liters: +r.liters, cost: +r.cost, invoice: r.invoice, odometer: +r.odometer, driver: r.driver })),
-    transfers: t.data!.map(r => ({ id: r.id, vehicleId: r.vehicle_id, datetime: r.datetime, liters: +r.liters, equipment: r.equipment, person: r.person, notes: r.notes })),
+    transfers: t.data!.map(r => ({ id: r.id, exitNo: r.exit_no ?? '', vehicleId: r.vehicle_id, datetime: r.datetime, liters: +r.liters, equipment: r.equipment, person: r.person, notes: r.notes })),
   }
 }
 

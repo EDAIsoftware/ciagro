@@ -492,29 +492,40 @@ function VehPicker({ vs, onPick }: { vs: V[]; onPick: (v: V) => void }) {
 
 function TallerTab({ vs, wk, openWork, onNew, onReload }: { vs: V[]; wk: Work[]; openWork: (id: string) => void; onNew: (v: V) => void; onReload: () => void }) {
   const [month, setMonth] = useState(today().slice(0, 7))
-  const [wt, setWt] = useState<'mes' | '0' | '1' | '2' | '3' | 'act'>('mes')
+  const [wt, setWt] = useState<'todo' | 'mes' | '0' | '1' | '2' | '3' | 'act'>('todo')
+  const [q, setQ] = useState('')
   const [ex, setEx] = useState<Work | null>(null)
   const vOf = (id: string) => vs.find(x => x.id === id)
   const mine = wk.filter(w => vOf(w.vehicle_id))
   const t0 = new Date(today() + 'T00:00:00'), s0 = new Date(t0), e0 = new Date(t0)
   s0.setDate(t0.getDate() - ((t0.getDay() + 6) % 7)); e0.setDate(s0.getDate() + 6)
   const inMonth = mine.filter(w => w.entry_date.slice(0, 7) === month)
-  const list = wt === 'act' ? mine.filter(w => w.entry_date >= ymd(s0) && w.entry_date <= ymd(e0)) : wt === 'mes' ? inMonth : inMonth.filter(w => Math.min(3, Math.floor((+w.entry_date.slice(8, 10) - 1) / 7)) === +wt)
+  // Las que siguen en taller se muestran SIEMPRE, sin importar la fecha de ingreso
+  const abiertas = mine.filter(w => !w.exit_date).sort((a, b) => a.entry_date.localeCompare(b.entry_date))
+  const words = plain(q).split(/\s+/).filter(Boolean)
+  const openShown = abiertas.filter(w => { const v = vOf(w.vehicle_id)!; return !words.length || words.every(x => plain(`${v.plate} ${v.name} ${v.driver} ${v.area} ${w.reason}`).includes(x)) })
+  // Las entregadas quedan en su mes; el filtro por fecha es opcional
+  const closed = mine.filter(w => w.exit_date)
+  const base = wt === 'todo' ? closed : wt === 'act' ? closed.filter(w => w.entry_date >= ymd(s0) && w.entry_date <= ymd(e0)) : closed.filter(w => w.entry_date.slice(0, 7) === month && (wt === 'mes' || Math.min(3, Math.floor((+w.entry_date.slice(8, 10) - 1) / 7)) === +wt))
+  const hist = [...base].sort((a, b) => (b.exit_date ?? '').localeCompare(a.exit_date ?? '')).slice(0, 60)
   const btn = 'h-8 rounded-lg border border-white/15 px-3 text-[11px] font-semibold text-slate-300 hover:bg-white/5'
   const mlabel = `${MES[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}`
+  const card = (w: Work) => { const v = vOf(w.vehicle_id)!; const open = !w.exit_date; const d = dayDiff(w.entry_date, w.exit_date ?? today())
+    return <div key={w.id} className="frost-card flex flex-wrap items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name} <span className="text-slate-500">· {v.driver}{v.area && ` · ${v.area}`}</span></p><p className="mt-1 text-[11px] text-slate-500">Ingreso {fmtD(w.entry_date)} · {w.reason}{w.exit_date && ` · salida ${fmtD(w.exit_date)}`}</p></div>
+      <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={open ? { background: AMBER + '22', color: '#ffae47' } : { background: GREEN + '22', color: GREEN }}>{open ? 'En taller' : 'Entregada'} · {d} día{d === 1 ? '' : 's'}</span>
+      {open && <button onClick={() => setEx(w)} className={btn}>Registrar salida</button>}<button onClick={() => openWork(w.id)} className={btn}>Informe</button></div> }
   return <div>
-    <div className="grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">En taller ahora</p><p className="text-2xl font-medium" style={{ color: AMBER }}>{mine.filter(w => !w.exit_date).length}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Ingresos del mes</p><p className="text-2xl font-medium" style={{ color: CYAN }}>{inMonth.length}</p></div></div>
+    <div className="grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">En taller ahora</p><p className="text-2xl font-medium" style={{ color: AMBER }}>{abiertas.length}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Ingresos de {mlabel}</p><p className="text-2xl font-medium" style={{ color: CYAN }}>{inMonth.length}</p></div></div>
     <div className="mt-3"><VehPicker vs={vs} onPick={onNew} /></div>
-    <div className="mt-6 flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-semibold text-white">Ingresos a taller</h3><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none" /></div>
-    <div className="mt-3 flex flex-wrap gap-2">{([['mes', 'Mes'], ['0', 'Semana 1'], ['1', 'Semana 2'], ['2', 'Semana 3'], ['3', 'Semana 4'], ['act', 'Actual']] as const).map(([k, l]) => <button key={k} onClick={() => setWt(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${wt === k ? 'border-[#ff8a00] bg-[#ff8a00]/10 text-[#ffae47]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
-    <p className="mt-2 text-[11px] text-slate-500">{wt === 'act' ? `Semana actual: del ${fmtD(ymd(s0))} al ${fmtD(ymd(e0))}` : wt === 'mes' ? mlabel : `Semana ${+wt + 1} de ${mlabel}: días ${['1 al 7', '8 al 14', '15 al 21', '22 al fin de mes'][+wt]}`}</p>
-    <div className="mt-3 flex flex-col gap-2">{list.map(w => { const v = vOf(w.vehicle_id)!; const open = !w.exit_date; const d = dayDiff(w.entry_date, w.exit_date ?? today())
-      return <div key={w.id} className="frost-card flex flex-wrap items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-sm text-white"><b className="font-mono">{v.plate}</b> · {v.name} <span className="text-slate-500">· {v.driver}{v.area && ` · ${v.area}`}</span></p><p className="mt-1 text-[11px] text-slate-500">Ingreso {fmtD(w.entry_date)} · {w.reason}{w.exit_date && ` · salida ${fmtD(w.exit_date)}`}</p></div>
-        <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={open ? { background: AMBER + '22', color: '#ffae47' } : { background: GREEN + '22', color: GREEN }}>{open ? 'En taller' : 'Entregada'} · {d} día{d === 1 ? '' : 's'}</span>
-        {open && <button onClick={() => setEx(w)} className={btn}>Registrar salida</button>}<button onClick={() => openWork(w.id)} className={btn}>Informe</button></div> })}
-      {!list.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay ingresos a taller en este período.</p>}</div>
 
-    
+    <h3 className="mt-6 text-lg font-semibold text-white">En taller ahora<span className="ml-2 text-xs font-normal text-slate-500">{abiertas.length} · se quedan aquí hasta registrar la salida</span></h3>
+    {abiertas.length > 6 && <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar en las que están en taller…" className={inp} style={{ paddingLeft: 40 }} /></div>}
+    <div className="mt-3 flex flex-col gap-2">{openShown.map(card)}{!openShown.length && <p className="frost-card p-6 text-center text-sm text-slate-500">{abiertas.length ? 'Sin resultados.' : 'No hay camionetas en taller.'}</p>}</div>
+
+    <div className="mt-8 flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-semibold text-white">Entregadas</h3>{wt !== 'todo' && wt !== 'act' && <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none" />}</div>
+    <div className="mt-3 flex flex-wrap gap-2">{([['todo', 'Todas'], ['mes', 'Por mes'], ['0', 'Semana 1'], ['1', 'Semana 2'], ['2', 'Semana 3'], ['3', 'Semana 4'], ['act', 'Esta semana']] as const).map(([k, l]) => <button key={k} onClick={() => setWt(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${wt === k ? 'border-[#ff8a00] bg-[#ff8a00]/10 text-[#ffae47]' : 'border-white/10 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
+    <p className="mt-2 text-[11px] text-slate-500">{wt === 'todo' ? 'Todas las entregadas, las más recientes primero. Puedes filtrar por fecha si quieres.' : wt === 'act' ? `Semana actual: del ${fmtD(ymd(s0))} al ${fmtD(ymd(e0))}` : wt === 'mes' ? mlabel : `Semana ${+wt + 1} de ${mlabel}: días ${['1 al 7', '8 al 14', '15 al 21', '22 al fin de mes'][+wt]}`}</p>
+    <div className="mt-3 flex flex-col gap-2">{hist.map(card)}{!hist.length && <p className="frost-card p-6 text-center text-sm text-slate-500">No hay entregadas en este período.</p>}</div>
     {ex && <WorkEdit w={ex} closing onClose={() => setEx(null)} onDone={onReload} />}
   </div>
 }

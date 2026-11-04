@@ -47,7 +47,7 @@ function FormModal({ modal, db, onClose, onSave }: { modal: NonNullable<Modal>; 
         {kind !== 'vehicle' && !db.vehicles.length ? <p className="text-sm text-slate-400">Primero agrega un vehículo.</p> : <>
           <div className="grid gap-4 sm:grid-cols-2">
             {kind === 'load' && <>{vehicleSelect}<Field label="Fecha"><input {...p('date', '', 'date')} /></Field><Field label="Litros"><input {...p('liters', '0.00', 'number')} inputMode="decimal" /></Field><Field label="Costo total (Bs.)"><input {...p('cost', '0.00', 'number')} inputMode="decimal" /></Field><Field label="N° de factura"><input {...p('invoice', 'FAC-000000')} /></Field><Field label="Odómetro (Km)"><input {...p('odometer', '000000', 'number')} inputMode="numeric" /></Field></>}
-            {kind === 'transfer' && <>{vehicleSelect}<Field label="Fecha y hora"><input {...p('datetime', '', 'datetime-local')} /></Field><Field label="Litros"><input {...p('liters', '0.00', 'number')} inputMode="decimal" /></Field><Field label="Equipo destino"><select {...p('equipment')} className={inputCls}>{EQUIPMENT.map(e => <option key={e} className="bg-[#111a2a]">{e}</option>)}</select></Field><Field label="Responsable que retira"><input {...p('person', 'Nombre completo')} /></Field><Field label="Notas / orden de trabajo"><input {...p('notes', 'Ej. OT #884')} /></Field></>}
+            {kind === 'transfer' && <>{vehicleSelect}<Field label="N° de salida"><input {...p('exitNo', 'SAL-000000')} /></Field><Field label="Fecha y hora"><input {...p('datetime', '', 'datetime-local')} /></Field><Field label="Litros"><input {...p('liters', '0.00', 'number')} inputMode="decimal" /></Field><Field label="Equipo destino"><select {...p('equipment')} className={inputCls}>{EQUIPMENT.map(e => <option key={e} className="bg-[#111a2a]">{e}</option>)}</select></Field><Field label="Responsable que retira"><input {...p('person', 'Nombre completo')} /></Field><Field label="Notas / orden de trabajo"><input {...p('notes', 'Ej. OT #884')} /></Field>{(() => { const last = [...db.transfers].filter(t => t.exitNo).sort((a, b) => b.datetime.localeCompare(a.datetime))[0]; return last ? <p className="text-[11px] text-slate-500 sm:col-span-2">Último número de salida registrado: <b className="font-mono text-slate-300">{last.exitNo}</b></p> : null })()}</>}
             {kind === 'vehicle' && <><Field label="Modelo"><input {...p('name', 'Toyota Hilux')} /></Field><Field label="Placa"><input {...p('plate', '0000-ABC')} /></Field><Field label="Combustible"><select {...p('type')} className={inputCls}><option className="bg-[#111a2a]">Diésel</option><option className="bg-[#111a2a]">Gasolina</option></select></Field><Field label="Conductor asignado"><input {...p('driver', 'Nombre completo')} /></Field><Field label="Odómetro actual (Km)"><input {...p('odometer', '0', 'number')} inputMode="numeric" /></Field><Field label="Rendimiento (km por litro)"><input {...p('kmpl', 'Ej. 9', 'number')} inputMode="decimal" /></Field><Field label="Saldo inicial (litros)"><input {...p('opening', '0', 'number')} inputMode="decimal" /></Field></>}
           </div>
           {err && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</p>}
@@ -68,8 +68,8 @@ function exportCsv(db: DB, m: string, rep: ReturnType<typeof equipmentReport>) {
     ['Equipo / Maquinaria', 'Litros', 'Importe Bs.'], ...rep.map(r => [r.equipment, n(r.liters), n(r.cost)]), [],
     ['CARGAS'], ['Fecha', 'Placa', 'Factura', 'Litros', 'Importe Bs.', 'Odometro', 'Conductor'],
     ...db.loads.filter(l => ym(l.date) === m).map(l => [l.date, plate(l.vehicleId), l.invoice, n(l.liters), n(l.cost), l.odometer, l.driver]), [],
-    ['SALIDAS A MAQUINARIA'], ['Fecha y hora', 'Placa', 'Litros', 'Equipo', 'Responsable', 'Notas'],
-    ...db.transfers.filter(t => ym(t.datetime) === m).map(t => [t.datetime.replace('T', ' '), plate(t.vehicleId), n(t.liters), t.equipment, t.person, t.notes]),
+    ['SALIDAS A MAQUINARIA'], ['N° salida', 'Fecha y hora', 'Placa', 'Litros', 'Equipo', 'Responsable', 'Notas'],
+    ...db.transfers.filter(t => ym(t.datetime) === m).map(t => [t.exitNo, t.datetime.replace('T', ' '), plate(t.vehicleId), n(t.liters), t.equipment, t.person, t.notes]),
   ]
   const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
   const a = document.createElement('a')
@@ -104,6 +104,7 @@ function Login() {
 }
 
 function EditTransfer({ t, onClose, onDone }: { t: DB['transfers'][number]; onClose: () => void; onDone: () => void }) {
+  const [exitNo, setExitNo] = useState(t.exitNo)
   const [dest, setDest] = useState(t.equipment)
   const [person, setPerson] = useState(t.person)
   const [notes, setNotes] = useState(t.notes)
@@ -111,12 +112,12 @@ function EditTransfer({ t, onClose, onDone }: { t: DB['transfers'][number]; onCl
   const opts = EQUIPMENT.includes(t.equipment) ? EQUIPMENT : [...EQUIPMENT, t.equipment]
   async function save() {
     if (!person.trim()) return setErr('Indica quién retira el combustible.')
-    const { error } = await api.updateTransfer(t.id, { equipment: dest, person: person.trim(), notes: notes.trim() })
+    const { error } = await api.updateTransfer(t.id, { exit_no: exitNo.trim(), equipment: dest, person: person.trim(), notes: notes.trim() })
     error ? setErr(error.message) : (onDone(), onClose())
   }
   return <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#05070c]/80 backdrop-blur-sm sm:items-center sm:p-6"><div className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#111a2a] sm:rounded-2xl">
     <div className="flex items-center justify-between border-b border-white/[0.07] p-5"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: AMBER }}>Editar salida</p><h2 className="text-lg font-semibold text-white">{fmtL(t.liters)} · {fmtDate(t.datetime)}</h2></div><button onClick={onClose} aria-label="Cerrar" className="text-slate-500 hover:text-white"><X className="size-5" /></button></div>
-    <div className="flex flex-col gap-4 p-5"><Field label="Destino"><select value={dest} onChange={e => setDest(e.target.value)} className={inputCls}>{opts.map(o => <option key={o} className="bg-[#111a2a]">{o}</option>)}</select></Field><Field label="Responsable que retira"><input value={person} onChange={e => setPerson(e.target.value)} className={inputCls} /></Field><Field label="Motivo / notas"><input value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} /></Field>
+    <div className="flex flex-col gap-4 p-5"><Field label="N° de salida"><input value={exitNo} onChange={e => setExitNo(e.target.value)} placeholder="SAL-000000" className={inputCls} /></Field><Field label="Destino"><select value={dest} onChange={e => setDest(e.target.value)} className={inputCls}>{opts.map(o => <option key={o} className="bg-[#111a2a]">{o}</option>)}</select></Field><Field label="Responsable que retira"><input value={person} onChange={e => setPerson(e.target.value)} className={inputCls} /></Field><Field label="Motivo / notas"><input value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} /></Field>
       {err && <p className="text-xs text-red-300">{err}</p>}<div className="flex justify-end gap-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: AMBER }}>Guardar</button></div></div></div></div>
 }
 
@@ -197,9 +198,13 @@ export default function FuelOpsDashboard() {
     } else {
       if (!f.datetime) return 'Ingresa fecha y hora.'
       if (!f.person?.trim()) return 'Indica quién retira el combustible.'
+      if (!f.exitNo?.trim()) return 'Ingresa el número de salida.'
+      const key = (x: string) => x.toLowerCase().replace(/\s+/g, '')
+      const dup = db!.transfers.find(t => t.exitNo && key(t.exitNo) === key(f.exitNo))
+      if (dup && !confirm(`Ya existe la salida N° ${dup.exitNo} (${fmtDate(dup.datetime)}). ¿Registrar igual?`)) return 'No se guardó: el número de salida ya existe.'
       const avail = db!.loads.filter(l => l.vehicleId === veh.id).reduce((a, l) => a + l.liters, 0) - db!.transfers.filter(t => t.vehicleId === veh.id).reduce((a, t) => a + t.liters, 0)
       if (liters > avail) return `Solo hay ${fmtL(avail)} facturados sin transferir en esta camioneta.`
-      const { error } = await api.addTransfer({ vehicle_id: veh.id, datetime: f.datetime, liters, equipment: f.equipment, person: f.person.trim(), notes: f.notes?.trim() ?? '' })
+      const { error } = await api.addTransfer({ vehicle_id: veh.id, exit_no: f.exitNo.trim(), datetime: f.datetime, liters, equipment: f.equipment, person: f.person.trim(), notes: f.notes?.trim() ?? '' })
       if (error) return error.message
       setMonth(ym(f.datetime))
     }
@@ -220,7 +225,7 @@ export default function FuelOpsDashboard() {
   const loadRows = (id?: string) => db.loads.filter(l => ym(l.date) === month && (!id || l.vehicleId === id)).sort((a, b) => b.date.localeCompare(a.date))
   const trRows = (id?: string) => db.transfers.filter(t => ym(t.datetime) === month && (!id || t.vehicleId === id)).sort((a, b) => b.datetime.localeCompare(a.datetime))
   const loadTable = (id?: string) => <Table heads={['Fecha', ...(id ? [] : ['Placa']), 'Factura', 'Litros', 'Importe', 'Odómetro', 'Conductor']} onDelete={delLoad} rows={loadRows(id).map(l => ({ id: l.id, cells: [fmtDate(l.date), ...(id ? [] : [plate(l.vehicleId)]), l.invoice, <span key="l" style={{ color: GREEN }}>{fmtL(l.liters)}</span>, fmtBs(l.cost), `${(l.odometer ?? 0).toLocaleString('es-BO')} km`, l.driver] }))} />
-  const trTable = (id?: string) => <Table heads={['Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'Motivo']} onDelete={delTransfer} onEdit={isAdmin ? (tid: string) => setEditT(db.transfers.find(x => x.id === tid) ?? null) : undefined} rows={trRows(id).map(t => ({ id: t.id, cells: [fmtDate(t.datetime), ...(id ? [] : [plate(t.vehicleId)]), <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, t.equipment, t.person, t.notes || '—'] }))} />
+  const trTable = (id?: string) => <Table heads={['N° salida', 'Fecha y hora', ...(id ? [] : ['Placa']), 'Litros', 'Destino', 'Responsable', 'Motivo']} onDelete={delTransfer} onEdit={isAdmin ? (tid: string) => setEditT(db.transfers.find(x => x.id === tid) ?? null) : undefined} rows={trRows(id).map(t => ({ id: t.id, cells: [<span key="n" className="font-mono" style={{ color: AMBER }}>{t.exitNo || '—'}</span>, fmtDate(t.datetime), ...(id ? [] : [plate(t.vehicleId)]), <span key="l" style={{ color: AMBER }}>{fmtL(t.liters)}</span>, t.equipment, t.person, t.notes || '—'] }))} />
 
   return <main className="print-root min-h-screen bg-[#0b0f17] text-slate-200">
     <aside className={`no-print fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/[0.07] bg-[#0d131f] p-5 transition-transform lg:translate-x-0 ${menu ? 'translate-x-0' : '-translate-x-full'}`}>

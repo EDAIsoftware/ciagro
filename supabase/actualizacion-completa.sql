@@ -580,3 +580,7 @@ alter table rt_requests add column if not exists pos int not null default 0;
 -- ============ transporte.sql ============
 -- EDAI · Una ruta puede hacerse en Bus (sin camioneta). Seguro de repetir.
 alter table rt_routes add column if not exists transport text not null default '';
+
+-- ============ salida.sql ============
+-- EDAI · Número de salida en las extracciones de combustible (como el número de factura en las cargas). Seguro de repetir.
+alter table transfers add column if not exists exit_no text not null default '';

@@ -83,6 +83,22 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
       await log(data.id, 'Creó la ruta'); await load(); open(data.id)
     }
   }
+  const [newSup, setNewSup] = useState('')
+  // Agrega un nombre nuevo de apoyo (queda guardado en Técnicos) o elige uno que ya existe
+  async function addSup() {
+    const name = newSup.trim().replace(/\s+/g, ' ')
+    if (!name) return
+    const ex = techs.find(t => norm(t.name) === norm(name))
+    if (ex) {
+      if (!ex.active) return setE('Ese nombre ya existe pero está inactivo. Actívalo en la pestaña Técnicos.')
+      if (ex.id !== d.tech_id && !d.support.includes(ex.id)) setD({ ...d, support: [...d.support, ex.id] })
+      return setNewSup('')
+    }
+    const { data, error } = await supabase.from('rt_technicians').insert({ name, area: 'Apoyo' }).select('id').single()
+    if (error || !data) return setE(error?.message ?? 'No se pudo agregar el nombre.')
+    await load()
+    setD(x => ({ ...x, support: [...x.support, data.id] })); setNewSup(''); setE('')
+  }
   const toggleSup = (id: string) => setD({ ...d, support: d.support.includes(id) ? d.support.filter(x => x !== id) : [...d.support, id] })
   return <div className="no-print mx-auto max-w-2xl">
     <button onClick={() => (r ? open(r.id) : back())} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
@@ -91,7 +107,7 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
       <div className="sm:col-span-2"><Lab t="Nº de ruta (hoja)"><input type="number" inputMode="numeric" className={inp} value={d.num} onChange={x => setD({ ...d, num: x.target.value })} /></Lab><p className="mt-1 text-[11px] text-slate-500">Se propone el siguiente número. Puedes cambiarlo para seguir con el de tu Excel; la próxima ruta continuará desde ahí.</p></div>
       <Lab t="Técnico asignado"><select className={inp} value={d.tech_id} onChange={x => setD({ ...d, tech_id: x.target.value })}><option value="" className="bg-[#111a2a]">Elegir…</option>{act.map(t => { const s = techState(t, d.depart_date); return <option key={t.id} value={t.id} className="bg-[#111a2a]">{t.name} · {s.l}</option> })}</select></Lab>
       <Lab t="Camioneta"><select className={inp} value={d.transport === 'Bus' ? '__bus__' : d.vehicle_id} onChange={x => x.target.value === '__bus__' ? setD({ ...d, vehicle_id: '', transport: 'Bus' }) : setD({ ...d, vehicle_id: x.target.value, transport: '' })}><option value="" className="bg-[#111a2a]">Elegir…</option><option value="__bus__" className="bg-[#111a2a]">Bus (sin camioneta)</option>{[...vehs].sort((a, b) => Number(b.area === 'Servicio') - Number(a.area === 'Servicio') || a.plate.localeCompare(b.plate)).map(v => <option key={v.id} value={v.id} className="bg-[#111a2a]">{v.plate} · {v.name} · {vehState(v, d.depart_date).l}</option>)}</select></Lab>
-      <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div></Lab></div>
+      <div className="sm:col-span-2"><Lab t="Técnicos de apoyo"><div className="flex flex-wrap gap-2">{act.filter(t => t.id !== d.tech_id).map(t => <button type="button" key={t.id} onClick={() => toggleSup(t.id)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${d.support.includes(t.id) ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{t.name}</button>)}</div><div className="mt-3 flex gap-2"><input value={newSup} onChange={x => setNewSup(x.target.value)} onKeyDown={x => { if (x.key === 'Enter') { x.preventDefault(); addSup() } }} placeholder="Agregar otro nombre de apoyo…" className={inp} /><button type="button" onClick={addSup} className="shrink-0 rounded-xl border border-[#c6ff00]/40 px-4 text-xs font-bold text-[#c6ff00] hover:bg-[#c6ff00]/10">Agregar</button></div></Lab></div>
       <Lab t="Fecha de salida"><input type="date" className={inp} value={d.depart_date} onChange={x => setD({ ...d, depart_date: x.target.value })} /></Lab><Lab t="Hora de salida"><input type="time" className={inp} value={d.depart_time} onChange={x => setD({ ...d, depart_time: x.target.value })} /></Lab>
       <Lab t="Retorno estimado"><input type="date" className={inp} value={d.return_date} onChange={x => setD({ ...d, return_date: x.target.value })} /></Lab><Lab t={`Días laborales${auto != null ? ` (calculado: ${auto})` : ''}`}><input type="number" className={inp} value={d.days} placeholder={auto != null ? String(auto) : ''} onChange={x => setD({ ...d, days: x.target.value })} /></Lab>
       <Lab t="Efectivo asignado (Bs)"><input type="number" inputMode="decimal" className={inp} value={d.cash} onChange={x => setD({ ...d, cash: x.target.value })} /></Lab><Lab t="Observaciones"><TextIn value={d.notes} onChange={v => setD({ ...d, notes: v })} /></Lab>

@@ -525,6 +525,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         {route.status !== 'cerrada' && <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => toggleDone(route, q)} className={btn}>{q.status === 'hecha' ? 'Deshacer' : 'Hecha'}</button><button onClick={() => setRq({ q, route })} className={btn}>Editar</button><button onClick={() => detach(route, q)} className={btn}>Quitar</button></div>}</div>)}
         {!visits.length && <p className="frost-card p-6 text-center text-sm text-slate-500">Esta ruta todavía no tiene visitas.</p>}</div>
       {route.status !== 'cerrada' && pend.length > 0 && <AttachRow route={route} pend={pend} onAttach={attach} />}
+      {isAdmin && <FindRequest route={route} reqs={reqs} routes={routes} who={who} onDone={load} />}
       <h3 className="mt-8 text-sm font-semibold text-white">Historial de cambios</h3>
       <div className="mt-2 divide-y divide-white/[0.06] rounded-xl border border-white/[0.07] text-xs text-slate-300">{hist.map(h => <p key={h.id} className="p-3"><span className="text-slate-500">{new Date(h.at).toLocaleString('es-BO')} · {h.who}</span><br />{h.what}</p>)}{!hist.length && <p className="p-3 text-slate-600">Sin cambios registrados.</p>}</div>
       {modals}
@@ -575,6 +576,37 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     {tab === 'tecnicos' && <div><div className="mb-3 flex justify-end"><button onClick={() => setTm('new')} className="flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Agregar técnico</button></div>
       <div className="flex flex-col gap-2">{techs.map(t => { const s = techState(t); return <div key={t.id} className="frost-card flex flex-wrap items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-sm text-white">{t.name}</p><p className="mt-0.5 text-[11px] text-slate-500">{t.area || 'Sin área'}{t.phone && ` · ${t.phone}`}{t.off_from && ` · ausente ${fmtD(t.off_from)} al ${fmtD(t.off_to)}`}</p></div><Chip c={s.c} t={s.l} /><button onClick={() => setTm(t)} className={btn}>Editar</button></div> })}</div></div>}
     {modals}
+  </div>
+}
+
+// Solo administrador: busca una solicitud en CUALQUIER estado o ruta y la mueve (o copia) a esta ruta, para que quede como constancia
+function FindRequest({ route, reqs, routes, who, onDone }: { route: Route; reqs: Req[]; routes: Route[]; who: string; onDone: () => void }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [msg, setMsg] = useState('')
+  const words = norm(q).split(' ').filter(Boolean)
+  const found = open && words.length ? reqs.filter(x => x.route_id !== route.id && words.every(w => norm(`${x.client} ${x.job} ${x.machine} ${x.model}`).includes(w))).slice(0, 8) : []
+  const rn = (id: string | null) => routes.find(r => r.id === id)
+  async function put(x: Req, copy: boolean) {
+    const from = rn(x.route_id), st = route.status === 'cerrada' || x.status === 'hecha' ? 'hecha' : 'asignada', date = x.visit_date ?? route.depart_date
+    const { error } = copy
+      ? await supabase.from('rt_requests').insert({ client: x.client, brand: x.brand, machine: x.machine, model: x.model, call_date: x.call_date, zone: x.zone, contact: x.contact, meeting_point: x.meeting_point, job: x.job, warranty: x.warranty, credit: x.credit, priority: x.priority, route_id: route.id, status: st, visit_date: date, pos: 0 })
+      : await supabase.from('rt_requests').update({ route_id: route.id, status: st, visit_date: date, pos: 0 }).eq('id', x.id)
+    if (error) return setMsg(error.message)
+    const logs = [{ route_id: route.id, who, what: `${copy ? 'Copió' : 'Movió'} aquí la visita: ${x.client}${from ? ` (de la ruta ${from.number})` : ''}` }]
+    if (!copy && from) logs.push({ route_id: from.id, who, what: `Se movió la visita ${x.client} a la ruta ${route.number}` })
+    await supabase.from('rt_changes').insert(logs)
+    setQ(''); setOpen(false); setMsg(''); onDone()
+  }
+  return <div className="mt-3 rounded-xl border border-dashed border-white/15 p-4">
+    <button onClick={() => setOpen(o => !o)} className="text-xs font-semibold text-slate-300 hover:text-white">{open ? '▾' : '▸'} ¿No la encuentras? Buscar en todas las solicitudes (cualquier estado o ruta)</button>
+    {open && <div className="mt-3">
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Escribe el cliente o parte del trabajo…" className={inp} />
+      {msg && <p className="mt-2 text-xs text-red-300">{msg}</p>}
+      <div className="mt-3 flex flex-col gap-2">{found.map(x => { const from = rn(x.route_id); return <div key={x.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 p-3"><div className="min-w-0 flex-1"><p className="text-sm text-white">{x.client}</p><p className="text-[11px] text-slate-400">{x.job.slice(0, 80)} · <span className="text-slate-300">{from ? `ruta ${from.number} · ` : ''}{x.status}</span></p></div><button onClick={() => put(x, false)} className="rounded-lg border border-[#c6ff00]/40 px-3 py-1.5 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Mover aquí</button><button onClick={() => put(x, true)} className="rounded-lg border border-white/15 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/5">Copiar aquí</button></div> })}
+        {!!words.length && !found.length && <p className="text-xs text-slate-500">No se encontró nada con ese texto.</p>}</div>
+      <p className="mt-3 text-[11px] text-slate-500"><b>Mover aquí</b>: la visita sale de la otra ruta y queda en esta. <b>Copiar aquí</b>: queda en las dos rutas (la copia no trae cobros, para no duplicar cuentas).</p>
+    </div>}
   </div>
 }
 

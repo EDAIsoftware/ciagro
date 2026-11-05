@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Printer, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { buildHojaXlsx, type HRoute } from '@/lib/hoja-xlsx'
 
@@ -138,6 +138,26 @@ function TextIn({ value, onChange, options, onPick, onCommit, placeholder, area,
     {value && <button type="button" aria-label="Borrar todo el texto" onMouseDown={e => e.preventDefault()} onClick={() => onChange('')} className="absolute right-2 top-2.5 grid size-7 place-items-center rounded-full bg-white/10 text-base leading-none text-slate-200 hover:bg-white/20">×</button>}
     {open && list.length > 0 && <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-white/10 bg-[#111a2a] shadow-xl">{list.map(o => <button type="button" key={o} onMouseDown={e => e.preventDefault()} onClick={() => { onChange(o); onPick?.(o); setOpen(false) }} className="block w-full px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-white/5">{o}</button>)}</div>}
   </div>
+}
+
+// Devuelve a su ruta las visitas que se habían agregado y hoy figuran en pendientes (por el cierre anterior)
+function RecoverModal({ route, cands, onClose, onDone }: { route: Route; cands: { q: Req; pre: boolean }[]; onClose: () => void; onDone: (qs: Req[]) => void }) {
+  const [sel, setSel] = useState<Set<string>>(new Set(cands.filter(c => c.pre).map(c => c.q.id)))
+  const [done, setDone] = useState(route.status === 'cerrada')
+  const [err, setErr] = useState('')
+  async function save() {
+    const chosen = cands.map(c => c.q).filter(q => sel.has(q.id))
+    if (!chosen.length) return setErr('Elige al menos una visita.')
+    const { error } = await supabase.from('rt_requests').update({ route_id: route.id, status: done ? 'hecha' : 'asignada', visit_date: route.depart_date, pos: 0 }).in('id', chosen.map(q => q.id))
+    if (error) return setErr(error.message)
+    onDone(chosen); onClose()
+  }
+  return <Modal title={`Recuperar visitas · ruta ${route.number}`} sub="Visitas de esta ruta que hoy están en Solicitudes pendientes" onClose={onClose}><div className="flex flex-col gap-3">
+    {cands.map(({ q }) => <label key={q.id} className="flex items-start gap-3 rounded-xl border border-white/10 p-3 text-sm text-slate-200"><input type="checkbox" className="mt-1 size-5 shrink-0" checked={sel.has(q.id)} onChange={e => setSel(o => { const n = new Set(o); e.target.checked ? n.add(q.id) : n.delete(q.id); return n })} /><span><b className="text-white">{q.client}</b><span className="block text-xs text-slate-400">{[q.brand, q.machine, q.model].filter(Boolean).join(' ')} · {q.job.slice(0, 90)}</span></span></label>)}
+    {route.status === 'cerrada' && <label className="flex items-center gap-3 text-sm text-slate-200"><input type="checkbox" className="size-5" checked={done} onChange={e => setDone(e.target.checked)} />Marcarlas como hechas (la ruta ya está cerrada)</label>}
+    {err && <p className="text-xs text-red-300">{err}</p>}
+    <div className="flex justify-end gap-2"><button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Devolver a la ruta</button></div>
+  </div></Modal>
 }
 
 function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void; onDone: () => void }) {
@@ -314,6 +334,8 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const [rq, setRq] = useState<{ q: Req | null; route: Route | null } | null>(null)
   const [rfilter, setRfilter] = useState<'abiertas' | 'cerradas' | 'todas'>('abiertas')
   const [qfilter, setQfilter] = useState<'pendiente' | 'cobrar' | 'todas'>('pendiente')
+  const [qs, setQs] = useState('')
+  const [rec, setRec] = useState(false)
   const [off, setOff] = useState(0)
   const [hist, setHist] = useState<Change[]>([])
   const [err, setErr] = useState('')
@@ -387,13 +409,24 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
 
   async function setStatus(r: Route, st: Route['status'], what: string) {
     if (st === 'cerrada') {
+      // Una ruta cerrada es un documento: sus visitas NUNCA se sacan de la ruta
       const open = reqs.filter(q => q.route_id === r.id && q.status === 'asignada')
-      if (!confirm(open.length ? `Hay ${open.length} visita(s) sin marcar como hechas: volverán a pendientes. ¿Cerrar la ruta?` : '¿Cerrar la ruta?')) return
-      if (open.length) await supabase.from('rt_requests').update({ route_id: null, status: 'pendiente', visit_date: null, pos: 0 }).eq('route_id', r.id).eq('status', 'asignada')
+      if (open.length) {
+        if (confirm(`Hay ${open.length} visita(s) sin marcar como hechas.\n\nAceptar = se realizaron todas: se marcan como hechas y se cierra la ruta.\nCancelar = ver otra opción.`)) {
+          const { error } = await supabase.from('rt_requests').update({ status: 'hecha' }).eq('route_id', r.id).eq('status', 'asignada')
+          if (error) return alert(error.message)
+        } else if (!confirm(`¿Cerrar la ruta dejando ${open.length} visita(s) como NO REALIZADAS?\n\nQuedan guardadas dentro de la ruta (la hoja y el Excel salen completos) y las puedes reprogramar después.`)) return
+      } else if (!confirm('¿Cerrar la ruta?')) return
     }
     const { error } = await supabase.from('rt_routes').update({ status: st }).eq('id', r.id)
     if (error) return alert(error.message)
     await log(r.id, what); load()
+  }
+  async function reprogram(r: Route, q: Req) {
+    if (!confirm(`¿Reprogramar la visita de ${q.client}?\n\nSe crea una solicitud pendiente nueva para otra ruta. Esta queda guardada en la ruta ${r.number} como no realizada.`)) return
+    const { error } = await supabase.from('rt_requests').insert({ client: q.client, brand: q.brand, machine: q.machine, model: q.model, call_date: q.call_date, zone: q.zone, contact: q.contact, meeting_point: q.meeting_point, job: q.job, warranty: q.warranty, credit: q.credit, priority: q.priority, status: 'pendiente' })
+    if (error) return alert(error.message)
+    await log(r.id, `Reprogramó la visita: ${q.client}`); load()
   }
   async function delRoute(r: Route) {
     if (!confirm(`¿Eliminar la ruta ${r.number}? Las visitas asignadas vuelven a pendientes.`)) return
@@ -460,6 +493,12 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   if (scr === 'detail' && route) {
     const visits = reqs.filter(q => q.route_id === route.id).sort(byOrder)
     const pend = reqs.filter(q => q.status === 'pendiente')
+    // Visitas que el historial de ESTA ruta dice que se agregaron, y que hoy están sueltas en pendientes
+    const net: Record<string, number> = {}
+    hist.forEach(h => { const a = h.what.match(/^Agregó la visita: (.+)$/), b = h.what.match(/^Quitó la visita: (.+)$/); if (a) net[norm(a[1].trim())] = (net[norm(a[1].trim())] ?? 0) + 1; if (b) net[norm(b[1].trim())] = (net[norm(b[1].trim())] ?? 0) - 1 })
+    const here: Record<string, number> = {}
+    visits.forEach(v => { here[norm(v.client.trim())] = (here[norm(v.client.trim())] ?? 0) + 1 })
+    const cands = Object.entries(net).flatMap(([k, n]) => { const missing = n - (here[k] ?? 0); if (missing <= 0) return []; const found = pend.filter(x => norm(x.client.trim()) === k); return found.map(q => ({ q, pre: found.length <= missing })) })
     const st = { borrador: ['Borrador', '#94a3b8'], confirmada: ['Confirmada', GREEN], cerrada: ['Cerrada', '#64748b'] }[route.status]
     return <div className="no-print mx-auto max-w-3xl">
       <button onClick={() => { setScr('main'); setRid(null) }} className="mb-4 flex items-center gap-2 text-xs text-slate-500 hover:text-white"><ArrowLeft className="size-4" />Volver</button>
@@ -476,9 +515,12 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         <button onClick={async () => { const { error } = await supabase.from('rt_print_jobs').insert({ route_id: route.id, requested_by_name: who }); alert(error ? error.message : 'Enviada a la impresora de la oficina. Sale en unos segundos si la computadora de impresión está encendida.') }} className={btn}>Enviar a la impresora de la oficina</button>
         {isAdmin && <button onClick={() => delRoute(route)} className="h-9 rounded-lg border border-red-500/30 px-3 text-xs text-red-300"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}
       </div>
+      {cands.length > 0 && <button onClick={() => setRec(true)} className="mt-6 w-full rounded-xl border border-[#c6ff00]/40 bg-[#c6ff00]/10 px-4 py-3 text-left text-xs text-[#c6ff00]">Se encontraron {cands.length} visita{cands.length === 1 ? '' : 's'} de esta ruta que hoy están en Solicitudes pendientes. Toca aquí para devolverlas a la ruta →</button>}
+      {rec && cands.length > 0 && <RecoverModal route={route} cands={cands} onClose={() => setRec(false)} onDone={async chosen => { await supabase.from('rt_changes').insert(chosen.map(q => ({ route_id: route.id, who, what: `Recuperó la visita: ${q.client}` }))); load() }} />}
       <div className="mt-8 flex items-center justify-between"><h3 className="text-lg font-semibold text-white">Visitas ({visits.length})</h3><div className="flex items-center gap-4">{route.status !== 'cerrada' && visits.some(q => (q.pos ?? 0) > 0) && <button onClick={() => autoOrder(route)} className="text-xs text-slate-400 underline hover:text-white">Ordenar por prioridad</button>}{route.status !== 'cerrada' && <button onClick={() => setRq({ q: null, route })} className="flex items-center gap-1.5 text-xs text-[#c6ff00]"><Plus className="size-4" />Nueva visita</button>}</div></div>
       {visits.length > 1 && <p className="mt-1 text-[11px] text-slate-500">Así saldrán en la hoja: primero la prioridad 1. Usa ▲ ▼ para cambiar el orden o toca 1, 2, 3 para cambiar la prioridad.</p>}
-      <div className="mt-3 flex flex-col gap-2">{visits.map((q, qi) => <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3 pr-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">Visita {fmtD(q.visit_date)} · {q.zone}{q.meeting_point && ` · ${q.meeting_point}`}{q.contact && ` · ${q.contact}`}</p><div className="mt-2 flex flex-wrap items-center gap-2">{route.status !== 'cerrada' && <span className="flex items-center gap-1 text-[11px] text-slate-500">Prioridad{[1, 2, 3].map(n => <button key={n} onClick={() => setPriority(route, q, n)} aria-label={`Prioridad ${n}`} className="size-6 rounded-md border text-[11px] font-bold" style={q.priority === n ? { background: PRI[n], borderColor: PRI[n], color: n === 2 ? '#000' : '#fff' } : { borderColor: 'rgba(255,255,255,.15)', color: '#94a3b8' }}>{n}</button>)}</span>}{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{q.status === 'hecha' && <Chip c={GREEN} t="Hecha" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
+      <div className="mt-3 flex flex-col gap-2">{visits.map((q, qi) => <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3 pr-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">Visita {fmtD(q.visit_date)} · {q.zone}{q.meeting_point && ` · ${q.meeting_point}`}{q.contact && ` · ${q.contact}`}</p><div className="mt-2 flex flex-wrap items-center gap-2">{route.status !== 'cerrada' && <span className="flex items-center gap-1 text-[11px] text-slate-500">Prioridad{[1, 2, 3].map(n => <button key={n} onClick={() => setPriority(route, q, n)} aria-label={`Prioridad ${n}`} className="size-6 rounded-md border text-[11px] font-bold" style={q.priority === n ? { background: PRI[n], borderColor: PRI[n], color: n === 2 ? '#000' : '#fff' } : { borderColor: 'rgba(255,255,255,.15)', color: '#94a3b8' }}>{n}</button>)}</span>}{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{q.status === 'hecha' && <Chip c={GREEN} t="Hecha" />}{route.status === 'cerrada' && q.status === 'asignada' && <Chip c={RED} t="No realizada" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
+        {route.status === 'cerrada' && q.status === 'asignada' && <div className="flex shrink-0 flex-col justify-center p-3"><button onClick={() => reprogram(route, q)} className={btn}>Reprogramar</button></div>}
         {route.status !== 'cerrada' && visits.length > 1 && <div className="flex shrink-0 flex-col justify-center gap-1.5 py-3"><button onClick={() => move(route, q, -1)} disabled={qi === 0} aria-label="Subir" className="grid size-9 place-items-center rounded-lg border border-white/15 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-25">▲</button><button onClick={() => move(route, q, 1)} disabled={qi === visits.length - 1} aria-label="Bajar" className="grid size-9 place-items-center rounded-lg border border-white/15 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-25">▼</button></div>}
         {route.status !== 'cerrada' && <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => toggleDone(route, q)} className={btn}>{q.status === 'hecha' ? 'Deshacer' : 'Hecha'}</button><button onClick={() => setRq({ q, route })} className={btn}>Editar</button><button onClick={() => detach(route, q)} className={btn}>Quitar</button></div>}</div>)}
         {!visits.length && <p className="frost-card p-6 text-center text-sm text-slate-500">Esta ruta todavía no tiene visitas.</p>}</div>
@@ -495,7 +537,8 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const cobrar = reqs.filter(q => q.pay_status === 'pendiente'), cobrarTotal = cobrar.reduce((a, q) => a + (q.amount ?? 0), 0)
   const mesAct = today().slice(0, 7), cobradoMes = reqs.filter(q => q.pay_status === 'pagado' && (q.paid_date ?? '').slice(0, 7) === mesAct).reduce((a, q) => a + (q.amount ?? 0), 0)
   const porCliente = (Object.entries(cobrar.reduce<Record<string, { n: number; t: number }>>((m, q) => { const k = q.client.trim(); m[k] = { n: (m[k]?.n ?? 0) + 1, t: (m[k]?.t ?? 0) + (q.amount ?? 0) }; return m }, {})) as [string, { n: number; t: number }][]).sort((a, b) => b[1].t - a[1].t)
-  const ql = reqs.filter(q => (qfilter === 'todas' ? true : qfilter === 'cobrar' ? q.pay_status === 'pendiente' : q.status === 'pendiente')).sort((a, b) => a.priority - b.priority || (a.call_date ?? '').localeCompare(b.call_date ?? ''))
+  const qWords = norm(qs).split(' ').filter(Boolean)
+  const ql = reqs.filter(q => (qfilter === 'todas' ? true : qfilter === 'cobrar' ? q.pay_status === 'pendiente' : q.status === 'pendiente')).filter(q => !qWords.length || qWords.every(w => norm(`${q.client} ${q.job} ${q.brand} ${q.machine} ${q.model} ${q.zone} ruta ${routes.find(x => x.id === q.route_id)?.number ?? ''}`).includes(w))).sort((a, b) => a.priority - b.priority || (a.call_date ?? '').localeCompare(b.call_date ?? ''))
   const tabBtn = (k: typeof tab, l: string) => <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap border-b-2 px-4 pb-3 text-sm font-semibold ${tab === k ? 'border-[#c6ff00] text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>{l}</button>
   return <div className="no-print">
     <div className="mb-6 flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c6ff00]">Servicio técnico</p><h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Rutas de servicio</h2></div>
@@ -522,9 +565,10 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
         {!list.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay rutas aquí.</p>}</div></div>}
 
     {tab === 'solicitudes' && <div><div className="mb-3 grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Por cobrar</p><p className="text-xl font-medium" style={{ color: RED }}>{cobrarTotal.toLocaleString('es-BO')} Bs</p><p className="text-[11px] text-slate-500">{cobrar.length} visita{cobrar.length === 1 ? '' : 's'}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Cobrado este mes</p><p className="text-xl font-medium" style={{ color: GREEN }}>{cobradoMes.toLocaleString('es-BO')} Bs</p></div></div><div className="mb-3 flex items-center justify-between gap-2"><div className="flex flex-wrap gap-2">{(['pendiente', 'cobrar', 'todas'] as const).map(k => <button key={k} onClick={() => setQfilter(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${qfilter === k ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{k === 'pendiente' ? 'Pendientes' : k === 'cobrar' ? `Por cobrar (${cobrar.length})` : 'Todas'}</button>)}</div><button onClick={() => setRq({ q: null, route: null })} className="flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Nueva solicitud</button></div>
+      <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={qs} onChange={e => setQs(e.target.value)} placeholder="Buscar cliente, trabajo, máquina o número de ruta… (usa Todas para ver también las asignadas y hechas)" className={inp} style={{ paddingLeft: 40 }} /></div>
       {qfilter === 'cobrar' && porCliente.length > 0 && <div className="frost-card mb-3 divide-y divide-white/[0.06]">{porCliente.map(([c, v]) => <div key={c} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"><span className="text-slate-200">{c}<span className="ml-2 text-[11px] text-slate-500">{v.n} visita{v.n === 1 ? '' : 's'}</span></span><b style={{ color: RED }}>{v.t.toLocaleString('es-BO')} Bs</b></div>)}</div>}
       <div className="flex flex-col gap-2">{ql.map(q => { const days = q.call_date ? Math.max(0, Math.round((Date.parse(today()) - Date.parse(q.call_date)) / 864e5)) : null; const r = routes.find(x => x.id === q.route_id)
-        return <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">{q.zone}{days != null && ` · llamó hace ${days} día${days === 1 ? '' : 's'}`}{r && ` · ruta ${r.number}`} · {q.status}</p><div className="mt-2 flex flex-wrap items-center gap-2">{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
+        return <div key={q.id} className="frost-card flex gap-3 overflow-hidden"><div className="w-2.5 shrink-0" style={{ background: PRI[q.priority] }} /><div className="min-w-0 flex-1 py-3"><p className="text-sm text-white">{q.client} <span className="text-slate-500">· {[q.brand, q.machine, q.model].filter(Boolean).join(' ')}</span></p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{q.job}</p><p className="mt-1 text-[11px] text-slate-500">{q.zone}{days != null && ` · llamó hace ${days} día${days === 1 ? '' : 's'}`}{r && ` · ruta ${r.number}`} · {q.status}</p><div className="mt-2 flex flex-wrap items-center gap-2">{q.warranty && <Chip c={AMBER} t="Garantía" />}{q.credit && <Chip c={VIOLET} t="Crédito" />}{r && <Chip c="#94a3b8" t={`Ruta ${r.number}`} />}{payChip(q)}{q.amount != null && <Chip c="#00d2ff" t={`${q.amount.toLocaleString('es-BO')} Bs`} />}{q.pay_status === 'pendiente' && <button onClick={() => markPaid(q)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-2.5 py-1 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Marcar pagado</button>}</div></div>
           <div className="flex shrink-0 flex-col gap-1.5 p-3"><button onClick={() => setRq({ q, route: null })} className={btn}>Editar</button>{isAdmin && <button onClick={() => delReq(q)} className={btn + ' !border-red-500/30 !text-red-300'}>Eliminar</button>}{q.status === 'pendiente' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'cancelada' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Cancelar</button>}{q.status === 'cancelada' && <button onClick={async () => { const { error } = await supabase.from('rt_requests').update({ status: 'pendiente' }).eq('id', q.id); error ? alert(error.message) : load() }} className={btn}>Reactivar</button>}</div></div> })}
         {!ql.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay solicitudes.</p>}</div></div>}
 

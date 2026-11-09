@@ -1,7 +1,7 @@
 // Genera el libro de Excel de las hojas de ruta con el MISMO formato que "HOJA DE RUTA - SEMANA 42.xlsx".
 import { LOGO_B64, THEME, TPL, VML } from './hoja-template'
 
-export type HVisit = { client: string; brand: string; machine: string; model: string; callDate: string | null; zone: string; contact: string; meet: string; job: string; warranty: boolean; credit: boolean; priority: number; amount: number | null; paidDate: string | null; visitDate: string | null }
+export type HVisit = { client: string; brand: string; machine: string; model: string; callDate: string | null; zone: string; contact: string; meet: string; job: string; warranty: boolean; credit: boolean; priority: number; amount: number | null; amountText?: string; paidDate: string | null; visitDate: string | null }
 export type HRoute = { week: number; year: number; number: number; tech: string; support: string; plate: string; departDate: string; departTime: string | null; returnDate: string | null; cash: number; workDays: number | null; visits: HVisit[] }
 
 type Val = string | number | null | undefined
@@ -37,7 +37,7 @@ function sheetXml(r: HRoute, vs: HVisit[], from: number): string {
         if (L === 'C') return cellXml(c.r, c.s, from + k + 1)
         const q = vs[k]; if (!q) return cellXml(c.r, c.s, null)
         const s = L === 'O' ? TPL.priS[q.priority] || styleOfCol.get('O')! : styleOfCol.get(L) ?? c.s
-        const m: Record<string, Val> = { D: q.client, E: q.brand, F: q.machine, G: q.model, H: serial(q.callDate), I: q.zone, J: q.contact, K: q.meet, L: q.job, M: q.warranty ? 'SI' : 'NO', N: q.credit ? 'SI' : 'NO', O: q.priority, P: q.amount ?? '-', Q: q.paidDate ? serial(q.paidDate) : '-', R: serial(q.visitDate) }
+        const m: Record<string, Val> = { D: q.client, E: q.brand, F: q.machine, G: q.model, H: serial(q.callDate), I: q.zone, J: q.contact, K: q.meet, L: q.job, M: q.warranty ? 'SI' : 'NO', N: q.credit ? 'SI' : 'NO', O: q.priority, P: q.amountText ?? q.amount ?? '-', Q: q.paidDate ? serial(q.paidDate) : '-', R: serial(q.visitDate) }
         return L in m ? cellXml(c.r, s, m[L]) : cellXml(c.r, s, c.v ?? c.n)
       }
       return cellXml(c.r, c.s, c.v ?? c.n)

@@ -8,8 +8,8 @@ import { buildHojaXlsx, type HRoute } from '@/lib/hoja-xlsx'
 export type Tech = { id: string; name: string; area: string; phone: string; active: boolean; off_from: string | null; off_to: string | null; off_reason: string }
 export type Veh = { id: string; name: string; plate: string; driver: string; area: string; odometer: number; km_next: number | null }
 export type Route = { id: string; number: number; year: number; week: number; tech_id: string | null; support: string[]; vehicle_id: string | null; transport?: string; depart_date: string; depart_time: string | null; return_date: string | null; cash: number; work_days: number | null; status: 'borrador' | 'confirmada' | 'cerrada'; notes: string; created_by_name: string; created_at: string }
-export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; pay_status?: '' | 'pendiente' | 'pagado'; pos?: number; notes: string; created_by_name: string; created_at: string }
-export type Client = { id: string; name: string; contact: string; zone: string; meeting_point: string; machines: { brand: string; machine: string; model: string }[] }
+export type Req = { id: string; route_id: string | null; client: string; brand: string; machine: string; model: string; call_date: string | null; zone: string; contact: string; meeting_point: string; job: string; warranty: boolean; credit: boolean; priority: number; status: 'pendiente' | 'asignada' | 'hecha' | 'cancelada'; visit_date: string | null; amount: number | null; paid_date: string | null; pay_status?: '' | 'pendiente' | 'pagado'; pay_method?: string; pay_detail?: string; balance_left?: number | null; pos?: number; notes: string; created_by_name: string; created_at: string }
+export type Client = { id: string; name: string; contact: string; zone: string; meeting_point: string; balance?: number; machines: { brand: string; machine: string; model: string }[] }
 type Change = { id: string; who: string; what: string; at: string }
 type Draft = { tech_id: string | null; support: string[]; vehicle_id: string | null; depart_date: string; return_date: string | null }
 
@@ -56,7 +56,15 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
   const auto = d.return_date && d.return_date >= d.depart_date ? workDays(d.depart_date, d.return_date) : null
   const ws = warn({ tech_id: d.tech_id || null, support: d.support, vehicle_id: d.vehicle_id || null, depart_date: d.depart_date, return_date: d.return_date || null }, r?.id ?? null)
   const act = techs.filter(t => t.active)
+  const busy = useRef(false)
+  const [saving, setSaving] = useState(false)
+  // Evita que un doble clic (o un clic mientras carga) cree la ruta dos veces
   async function save() {
+    if (busy.current) return
+    busy.current = true; setSaving(true)
+    try { await doSave() } finally { busy.current = false; setSaving(false) }
+  }
+  async function doSave() {
     if (!d.tech_id || (!d.vehicle_id && d.transport !== 'Bus') || !d.depart_date) return setE('Elige el técnico, la camioneta (o Bus) y la fecha de salida.')
     if (d.return_date && d.return_date < d.depart_date) return setE('El retorno no puede ser antes de la salida.')
     const n = Math.round(+d.num)
@@ -114,7 +122,7 @@ function RouteForm({ r, c }: { r: Route | null; c: Ctx }) {
       {iwInfo(d.depart_date)}</div>
     <div className="mt-4"><Warn list={ws} /></div>
     {e && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{e}</p>}
-    <button onClick={save} className="mt-5 h-12 w-full rounded-xl text-sm font-bold text-[#0b0f17]" style={{ background: GREEN }}>{r ? 'Guardar cambios' : 'Crear ruta'}</button>
+    <button onClick={save} disabled={saving} className="mt-5 h-12 w-full rounded-xl text-sm font-bold text-[#0b0f17] disabled:opacity-50" style={{ background: GREEN }}>{saving ? 'Guardando…' : r ? 'Guardar cambios' : 'Crear ruta'}</button>
   </div>
 }
 
@@ -160,6 +168,33 @@ function RecoverModal({ route, cands, onClose, onDone }: { route: Route; cands: 
   </div></Modal>
 }
 
+// Saldo a favor de cada cliente (crédito con la empresa, por ejemplo semillas que dejó): se puede ver y escribir
+function BalanceModal({ clients, onClose, onDone }: { clients: Client[]; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState('')
+  const [bal, setBal] = useState('')
+  const [err, setErr] = useState('')
+  const ex = clients.find(c => norm(c.name) === norm(name))
+  async function save() {
+    const n = name.trim(), v = +bal
+    if (!n || bal === '' || isNaN(v)) return setErr('Escribe el cliente y el saldo (puede ser 0).')
+    const { error } = ex ? await supabase.from('rt_clients').update({ balance: v }).eq('id', ex.id) : await supabase.from('rt_clients').insert({ name: n, balance: v })
+    if (error) return setErr(error.message)
+    setName(''); setBal(''); setErr(''); onDone()
+  }
+  const withBal = clients.filter(c => (c.balance ?? 0) !== 0).sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+  return <Modal title="Saldos a favor de clientes" sub="Crédito que el cliente tiene con la empresa (por ejemplo, semillas que dejó)" onClose={onClose}><div className="flex flex-col gap-4">
+    <div className="grid gap-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
+      <Lab t="Cliente"><input list="rt-clientes-dl" className={inp} value={name} onChange={e => { setName(e.target.value); const c = clients.find(x => norm(x.name) === norm(e.target.value)); if (c) setBal(String(c.balance ?? 0)) }} placeholder="Escribe o elige" /><datalist id="rt-clientes-dl">{clients.map(c => <option key={c.id} value={c.name} />)}</datalist></Lab>
+      <Lab t="Saldo (Bs)"><input type="number" inputMode="decimal" className={inp} value={bal} onChange={e => setBal(e.target.value)} /></Lab>
+      <button onClick={save} className="h-11 rounded-xl px-4 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button>
+    </div>
+    {ex && <p className="-mt-2 text-[11px] text-slate-500">Saldo actual de {ex.name}: {(ex.balance ?? 0).toLocaleString('es-BO')} Bs. Lo que escribas reemplaza ese saldo.</p>}
+    {err && <p className="text-xs text-red-300">{err}</p>}
+    <div className="frost-card divide-y divide-white/[0.06]">{withBal.map(c => <button key={c.id} onClick={() => { setName(c.name); setBal(String(c.balance ?? 0)) }} className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-white/[0.03]"><span className="text-slate-200">{c.name}</span><b style={{ color: (c.balance ?? 0) > 0 ? GREEN : RED }}>{(c.balance ?? 0).toLocaleString('es-BO')} Bs</b></button>)}{!withBal.length && <p className="p-5 text-center text-sm text-slate-500">Todavía no hay saldos a favor registrados.</p>}</div>
+    <p className="text-[11px] text-slate-500">Cuando una visita se paga con "Saldo a favor", el saldo del cliente se actualiza solo con lo que escribas como "saldo que le queda".</p>
+  </div></Modal>
+}
+
 function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ name: t?.name ?? '', area: t?.area ?? '', phone: t?.phone ?? '', active: t?.active ?? true, from: t?.off_from ?? '', to: t?.off_to ?? '', why: t?.off_reason || 'Vacación' })
   const [err, setErr] = useState('')
@@ -184,11 +219,12 @@ function TechForm({ t, onClose, onDone }: { t: Tech | null; onClose: () => void;
 }
 
 type SK = 'client' | 'brand' | 'machine' | 'model' | 'zone' | 'contact' | 'meet' | 'job'
-const payChip = (q: Req) => q.pay_status === 'pendiente' ? <Chip c={RED} t="Pendiente de pago" /> : q.pay_status === 'pagado' ? <Chip c={GREEN} t="Pagado" /> : null
+const PAYL: Record<string, string> = { efectivo: 'Efectivo', transferencia: 'Transferencia / QR', saldo: 'Saldo a favor', otro: 'Canje / otro' }
+const payChip = (q: Req) => q.pay_status === 'pendiente' ? <Chip c={RED} t="Pendiente de pago" /> : q.pay_status === 'pagado' ? <Chip c={GREEN} t={`Pagado${q.pay_method ? ` · ${PAYL[q.pay_method] ?? q.pay_method}` : ''}${q.pay_method === 'saldo' && q.balance_left != null ? ` (queda ${q.balance_left.toLocaleString('es-BO')} Bs)` : ''}`} /> : null
 
 function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, onDone }: { q: Req | null; route: Route | null; history: Req[]; clients: Client[]; catalog: CatItem[]; isAdmin: boolean; who: string; onClose: () => void; onDone: (what?: string) => void }) {
   const assigned = !!(route || q?.route_id)
-  const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha', pay: (q?.pay_status ?? '') as '' | 'pendiente' | 'pagado' })
+  const [f, setF] = useState({ client: q?.client ?? '', brand: q?.brand ?? '', machine: q?.machine ?? '', model: q?.model ?? '', call: q?.call_date ?? today(), zone: q?.zone ?? '', contact: q?.contact ?? '', meet: q?.meeting_point ?? '', job: q?.job ?? '', warranty: q?.warranty ?? false, credit: q?.credit ?? false, pri: String(q?.priority ?? 2), visit: q?.visit_date ?? route?.depart_date ?? '', amount: q?.amount != null ? String(q.amount) : '', paid: q?.paid_date ?? '', done: q?.status === 'hecha', pay: (q?.pay_status ?? '') as '' | 'pendiente' | 'pagado', pm: q?.pay_method ?? '', pd: q?.pay_detail ?? '', bal: q?.balance_left != null ? String(q.balance_left) : '' })
   const [err, setErr] = useState('')
   const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x && !!x.trim())))
   const set = (k: SK, v: string) => setF(p => ({ ...p, [k]: v }))
@@ -216,10 +252,10 @@ function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, o
     setF(p => ({ ...p, client: l?.client ?? cl!.name, zone: p.zone || l?.zone || cl?.zone || '', contact: p.contact || l?.contact || cl?.contact || '', meet: p.meet || (pts.length === 1 ? pts[0] : ''), ...(one && !p.machine && !p.model && !p.brand ? { brand: canon(one[0]), machine: one[1], model: one[2] } : {}) }))
   }
   // Guarda o actualiza el cliente y sus máquinas para que aparezcan la próxima vez
-  async function remember(b: { client: string; brand: string; machine: string; model: string; zone: string; contact: string; meeting_point: string }) {
+  async function remember(b: { client: string; brand: string; machine: string; model: string; zone: string; contact: string; meeting_point: string }, balance?: number) {
     const ex = clients.find(c => norm(c.name) === norm(b.client)), machines = [...(ex?.machines ?? [])]
     if ((b.brand || b.machine || b.model) && !machines.some(m => norm(m.brand) === norm(b.brand) && norm(m.machine) === norm(b.machine) && norm(m.model) === norm(b.model))) machines.push({ brand: b.brand, machine: b.machine, model: b.model })
-    const row = { name: ex?.name ?? b.client, contact: b.contact || ex?.contact || '', zone: b.zone || ex?.zone || '', meeting_point: b.meeting_point || ex?.meeting_point || '', machines }
+    const row = { name: ex?.name ?? b.client, contact: b.contact || ex?.contact || '', zone: b.zone || ex?.zone || '', meeting_point: b.meeting_point || ex?.meeting_point || '', machines, ...(balance !== undefined ? { balance } : {}) }
     await (ex ? supabase.from('rt_clients').update(row).eq('id', ex.id) : supabase.from('rt_clients').insert(row))
   }
   // Lo que se escribe y no estaba en las listas se guarda para la próxima vez
@@ -237,15 +273,23 @@ function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, o
     if (!data?.length) return setErr('No se pudo eliminar: solo el administrador puede hacerlo.')
     onDone(`Eliminó la solicitud: ${q.client}`); onClose()
   }
+  const busy = useRef(false)
+  const [saving, setSaving] = useState(false)
   async function save() {
+    if (busy.current) return
+    busy.current = true; setSaving(true)
+    try { await doSave() } finally { busy.current = false; setSaving(false) }
+  }
+  async function doSave() {
     if (!f.client.trim()) return setErr('Escribe el cliente.')
     if (f.pay === 'pagado' && !f.amount) return setErr('Escribe el monto cancelado.')
+    if (f.pay === 'pagado' && f.pm === 'saldo' && known && +f.amount > (known.balance ?? 0) && !confirm(`El saldo a favor de ${known.name} (${(known.balance ?? 0).toLocaleString('es-BO')} Bs) no alcanza para este pago (${(+f.amount).toLocaleString('es-BO')} Bs). ¿Registrar igual?`)) return
     if (!f.job.trim()) return setErr('Escribe el trabajo solicitado.')
     const rid = route?.id ?? q?.route_id ?? null
-    const body = { client: f.client.trim(), brand: f.brand.trim(), machine: f.machine.trim(), model: f.model.trim(), call_date: f.call || null, zone: f.zone.trim(), contact: f.contact.trim(), meeting_point: f.meet.trim(), job: f.job.trim(), warranty: f.warranty, credit: f.credit, priority: +f.pri, route_id: rid, status: !rid ? (q?.status === 'cancelada' ? 'cancelada' : 'pendiente') : f.done ? 'hecha' : 'asignada', visit_date: rid ? f.visit || null : null, amount: f.amount ? +f.amount : null, paid_date: f.pay === 'pagado' ? f.paid || today() : null, pay_status: f.pay }
+    const body = { client: f.client.trim(), brand: f.brand.trim(), machine: f.machine.trim(), model: f.model.trim(), call_date: f.call || null, zone: f.zone.trim(), contact: f.contact.trim(), meeting_point: f.meet.trim(), job: f.job.trim(), warranty: f.warranty, credit: f.credit, priority: +f.pri, route_id: rid, status: !rid ? (q?.status === 'cancelada' ? 'cancelada' : 'pendiente') : f.done ? 'hecha' : 'asignada', visit_date: rid ? f.visit || null : null, amount: f.amount ? +f.amount : null, paid_date: f.pay === 'pagado' ? f.paid || today() : null, pay_status: f.pay, pay_method: f.pay === 'pagado' ? f.pm : '', pay_detail: f.pay === 'pagado' ? f.pd.trim() : '', balance_left: f.pay === 'pagado' && f.pm === 'saldo' && f.bal !== '' ? +f.bal : null }
     const { error } = q ? await supabase.from('rt_requests').update(body).eq('id', q.id) : await supabase.from('rt_requests').insert({ ...body, created_by_name: who })
     if (error) return setErr(error.message)
-    await remember(body)
+    await remember(body, body.balance_left ?? undefined)
     await addCatalog(body)
     onDone(`${q ? 'Editó' : 'Agregó'} la visita: ${body.client}`); onClose()
   }
@@ -266,8 +310,11 @@ function ReqForm({ q, route, history, clients, catalog, isAdmin, who, onClose, o
     {assigned && <><Lab t="Fecha de visita"><input type="date" className={inp} value={f.visit} onChange={e => setF({ ...f, visit: e.target.value })} /></Lab><label className="flex items-center gap-2 pt-6 text-sm text-slate-300"><input type="checkbox" className="size-5" checked={f.done} onChange={e => setF({ ...f, done: e.target.checked })} />Visita hecha</label>
       </>}
     <Lab t="Estado de pago"><select className={inp} value={f.pay} onChange={e => { const v = e.target.value as '' | 'pendiente' | 'pagado'; setF({ ...f, pay: v, paid: v === 'pagado' ? f.paid || today() : '' }) }}><option value="" className="bg-[#111a2a]">Sin cobro</option><option value="pendiente" className="bg-[#111a2a]">Pendiente de pago</option><option value="pagado" className="bg-[#111a2a]">Pagado</option></select></Lab><Lab t="Monto (Bs)"><input type="number" inputMode="decimal" className={inp} value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></Lab>{f.pay === 'pagado' && <Lab t="Fecha de pago"><input type="date" className={inp} value={f.paid} onChange={e => setF({ ...f, paid: e.target.value })} /></Lab>}
+    {f.pay === 'pagado' && <><Lab t="Forma de pago"><select className={inp} value={f.pm} onChange={e => { const v = e.target.value; setF({ ...f, pm: v, bal: v === 'saldo' && f.bal === '' ? String(Math.max(0, (known?.balance ?? 0) - (+f.amount || 0))) : f.bal }) }}><option value="" className="bg-[#111a2a]">Sin definir</option>{Object.entries(PAYL).map(([k, l]) => <option key={k} value={k} className="bg-[#111a2a]">{k === 'saldo' ? 'Saldo a favor (crédito con la empresa)' : k === 'otro' ? 'Canje / otro (semillas, productos…)' : l}</option>)}</select></Lab>
+      <Lab t={f.pm === 'otro' ? 'Detalle (ej. 20 bolsas de semilla de soya)' : 'Detalle del pago (opcional)'}><input className={inp} value={f.pd} onChange={e => setF({ ...f, pd: e.target.value })} /></Lab>
+      {f.pm === 'saldo' && <div className="sm:col-span-2"><p className="mb-2 text-xs text-slate-400">Saldo a favor actual de {f.client.trim() || 'este cliente'}: <b className="text-white">{(known?.balance ?? 0).toLocaleString('es-BO')} Bs</b></p><Lab t="Saldo a favor que le queda (Bs) — puedes escribirlo"><input type="number" inputMode="decimal" className={inp} value={f.bal} onChange={e => setF({ ...f, bal: e.target.value })} /></Lab></div>}</>}
     {err && <p className="text-xs text-red-300 sm:col-span-2">{err}</p>}
-    <div className="flex items-center justify-end gap-2 sm:col-span-2">{q && isAdmin && <button onClick={del} className="mr-auto rounded-xl border border-red-500/30 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}<button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}>Guardar</button></div></div></Modal>
+    <div className="flex items-center justify-end gap-2 sm:col-span-2">{q && isAdmin && <button onClick={del} className="mr-auto rounded-xl border border-red-500/30 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"><Trash2 className="mr-1 inline size-3.5" />Eliminar</button>}<button onClick={onClose} className="px-3 text-xs text-slate-400">Cancelar</button><button onClick={save} disabled={saving} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#0b0f17] disabled:opacity-50" style={{ background: GREEN }}>{saving ? 'Guardando…' : 'Guardar'}</button></div></div></Modal>
 }
 
 export function RouteSheet({ r, techs, veh, visits, onBack }: { r: Route; techs: Tech[]; veh?: Veh; visits: Req[]; onBack: () => void }) {
@@ -336,6 +383,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const [qfilter, setQfilter] = useState<'pendiente' | 'cobrar' | 'todas'>('pendiente')
   const [qs, setQs] = useState('')
   const [rec, setRec] = useState(false)
+  const [bm, setBm] = useState(false)
   const [off, setOff] = useState(0)
   const [hist, setHist] = useState<Change[]>([])
   const [err, setErr] = useState('')
@@ -372,6 +420,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const route = routes.find(r => r.id === rid) ?? null
   const log = (id: string, what: string) => supabase.from('rt_changes').insert({ route_id: id, who, what })
   const open = (id: string) => { setRid(id); setScr('detail') }
+  const dupes = (() => { const m = new Map<string, Route[]>(); routes.forEach(r => { const k = [r.tech_id, r.depart_date, r.vehicle_id ?? r.transport ?? '', r.return_date, r.cash, r.support.join()].join('|'); m.set(k, [...(m.get(k) ?? []), r]) }); return [...m.values()].filter(g => g.length > 1) })()
 
   function techState(t: Tech, d = today()) {
     if (!t.active) return { l: 'Inactivo', c: '#64748b' }
@@ -537,6 +586,9 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
   const list = routes.filter(r => (rfilter === 'todas' ? true : rfilter === 'abiertas' ? r.status !== 'cerrada' : r.status === 'cerrada'))
   const cobrar = reqs.filter(q => q.pay_status === 'pendiente'), cobrarTotal = cobrar.reduce((a, q) => a + (q.amount ?? 0), 0)
   const mesAct = today().slice(0, 7), cobradoMes = reqs.filter(q => q.pay_status === 'pagado' && (q.paid_date ?? '').slice(0, 7) === mesAct).reduce((a, q) => a + (q.amount ?? 0), 0)
+  const saldos = clients.filter(c => (c.balance ?? 0) > 0), saldoTotal = saldos.reduce((a, c) => a + (c.balance ?? 0), 0)
+  const mesPag = reqs.filter(q => q.pay_status === 'pagado' && (q.paid_date ?? '').slice(0, 7) === mesAct)
+  const sumM = (f: (m: string) => boolean) => mesPag.filter(q => f(q.pay_method ?? '')).reduce((a, q) => a + (q.amount ?? 0), 0)
   const porCliente = (Object.entries(cobrar.reduce<Record<string, { n: number; t: number }>>((m, q) => { const k = q.client.trim(); m[k] = { n: (m[k]?.n ?? 0) + 1, t: (m[k]?.t ?? 0) + (q.amount ?? 0) }; return m }, {})) as [string, { n: number; t: number }][]).sort((a, b) => b[1].t - a[1].t)
   const qWords = norm(qs).split(' ').filter(Boolean)
   const ql = reqs.filter(q => (qfilter === 'todas' ? true : qfilter === 'cobrar' ? q.pay_status === 'pendiente' : q.status === 'pendiente')).filter(q => !qWords.length || qWords.every(w => norm(`${q.client} ${q.job} ${q.brand} ${q.machine} ${q.model} ${q.zone} ruta ${routes.find(x => x.id === q.route_id)?.number ?? ''}`).includes(w))).sort((a, b) => a.priority - b.priority || (a.call_date ?? '').localeCompare(b.call_date ?? ''))
@@ -547,6 +599,7 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
     {err && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">No se pudo cargar: {err}. ¿Ya ejecutaste rutas.sql en Supabase?</p>}
     <div className="mb-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">{tabBtn('semana', 'Semana')}{tabBtn('rutas', 'Rutas')}{tabBtn('solicitudes', `Solicitudes (${reqs.filter(q => q.status === 'pendiente').length})`)}{tabBtn('tecnicos', 'Técnicos')}</div>
 
+    {dupes.length > 0 && <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-xs text-amber-200"><p className="font-semibold">Posibles rutas duplicadas (mismo técnico, camioneta, fechas y efectivo)</p>{dupes.map((g, i) => <p key={i} className="mt-2 flex flex-wrap items-center gap-2">{g.map(r => <button key={r.id} onClick={() => open(r.id)} className="rounded-lg border border-amber-400/40 px-2.5 py-1 font-semibold hover:bg-amber-400/10">Ruta {r.number} · {reqs.filter(q => q.route_id === r.id).length} visita{reqs.filter(q => q.route_id === r.id).length === 1 ? '' : 's'}</button>)}</p>)}<p className="mt-2 text-amber-300/80">Ábrelas y elimina la que sobre (si tiene visitas, pásalas antes a la otra con Quitar y Agregar).</p></div>}
     {tab === 'semana' && <div>
       <div className="mb-3 flex items-center justify-between gap-2"><button onClick={() => setOff(off - 1)} className={btn}>← Anterior</button><p className="text-sm font-semibold text-white">Semana {isoWeek(days[0]).week} · {fmtD(days[0])} al {fmtD(days[6])}</p><button onClick={() => setOff(off + 1)} className={btn}>Siguiente →</button></div>
       {off !== 0 && <button onClick={() => setOff(0)} className="mb-3 text-xs text-[#c6ff00] underline">Ir a esta semana</button>}
@@ -565,7 +618,9 @@ export default function Rutas({ isAdmin, who }: { isAdmin: boolean; who: string 
       <div className="flex flex-col gap-2">{list.map(r => <button key={r.id} onClick={() => open(r.id)} className="frost-card flex flex-wrap items-center gap-3 p-4 text-left hover:border-white/20"><div className="min-w-0 flex-1"><p className="text-sm text-white"><b>Ruta {r.number}</b> · {tName(r.tech_id)}{r.support.length > 0 && <span className="text-slate-500"> + {r.support.length} apoyo</span>}</p><p className="mt-1 text-[11px] text-slate-500">{vOf(r.vehicle_id)?.plate ?? (r.transport || '—')} · {fmtD(r.depart_date)} al {fmtD(r.return_date)} · Semana {r.week} · {reqs.filter(q => q.route_id === r.id).length} visitas</p></div><Chip c={r.status === 'confirmada' ? GREEN : r.status === 'borrador' ? '#94a3b8' : '#64748b'} t={r.status} /></button>)}
         {!list.length && <p className="frost-card p-8 text-center text-sm text-slate-500">No hay rutas aquí.</p>}</div></div>}
 
-    {tab === 'solicitudes' && <div><div className="mb-3 grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Por cobrar</p><p className="text-xl font-medium" style={{ color: RED }}>{cobrarTotal.toLocaleString('es-BO')} Bs</p><p className="text-[11px] text-slate-500">{cobrar.length} visita{cobrar.length === 1 ? '' : 's'}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Cobrado este mes</p><p className="text-xl font-medium" style={{ color: GREEN }}>{cobradoMes.toLocaleString('es-BO')} Bs</p></div></div><div className="mb-3 flex items-center justify-between gap-2"><div className="flex flex-wrap gap-2">{(['pendiente', 'cobrar', 'todas'] as const).map(k => <button key={k} onClick={() => setQfilter(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${qfilter === k ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{k === 'pendiente' ? 'Pendientes' : k === 'cobrar' ? `Por cobrar (${cobrar.length})` : 'Todas'}</button>)}</div><button onClick={() => setRq({ q: null, route: null })} className="flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Nueva solicitud</button></div>
+    {tab === 'solicitudes' && <div><div className="mb-3 grid grid-cols-2 gap-2"><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Por cobrar</p><p className="text-xl font-medium" style={{ color: RED }}>{cobrarTotal.toLocaleString('es-BO')} Bs</p><p className="text-[11px] text-slate-500">{cobrar.length} visita{cobrar.length === 1 ? '' : 's'}</p></div><div className="frost-card p-3"><p className="text-[11px] text-slate-400">Cobrado este mes</p><p className="text-xl font-medium" style={{ color: GREEN }}>{cobradoMes.toLocaleString('es-BO')} Bs</p><p className="text-[11px] text-slate-500">Efectivo/transf.: {sumM(m => m === 'efectivo' || m === 'transferencia' || m === '').toLocaleString('es-BO')} · Saldo a favor: {sumM(m => m === 'saldo').toLocaleString('es-BO')} · Canje/otro: {sumM(m => m === 'otro').toLocaleString('es-BO')}</p></div></div>
+    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-xs text-slate-300">Saldos a favor de clientes: <b className="text-white">{saldoTotal.toLocaleString('es-BO')} Bs</b> · {saldos.length} cliente{saldos.length === 1 ? '' : 's'}<button onClick={() => setBm(true)} className="ml-auto rounded-lg border border-[#c6ff00]/40 px-3 py-1.5 text-[11px] font-semibold text-[#c6ff00] hover:bg-[#c6ff00]/10">Ver / editar saldos</button></div>
+    {bm && <BalanceModal clients={clients} onClose={() => setBm(false)} onDone={load} />}<div className="mb-3 flex items-center justify-between gap-2"><div className="flex flex-wrap gap-2">{(['pendiente', 'cobrar', 'todas'] as const).map(k => <button key={k} onClick={() => setQfilter(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${qfilter === k ? 'border-[#c6ff00] bg-[#c6ff00]/10 text-[#c6ff00]' : 'border-white/10 text-slate-400'}`}>{k === 'pendiente' ? 'Pendientes' : k === 'cobrar' ? `Por cobrar (${cobrar.length})` : 'Todas'}</button>)}</div><button onClick={() => setRq({ q: null, route: null })} className="flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#0b0f17]" style={{ background: GREEN }}><Plus className="size-4" />Nueva solicitud</button></div>
       <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-500" /><input value={qs} onChange={e => setQs(e.target.value)} placeholder="Buscar cliente, trabajo, máquina o número de ruta… (usa Todas para ver también las asignadas y hechas)" className={inp} style={{ paddingLeft: 40 }} /></div>
       {qfilter === 'cobrar' && porCliente.length > 0 && <div className="frost-card mb-3 divide-y divide-white/[0.06]">{porCliente.map(([c, v]) => <div key={c} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"><span className="text-slate-200">{c}<span className="ml-2 text-[11px] text-slate-500">{v.n} visita{v.n === 1 ? '' : 's'}</span></span><b style={{ color: RED }}>{v.t.toLocaleString('es-BO')} Bs</b></div>)}</div>}
       <div className="flex flex-col gap-2">{ql.map(q => { const days = q.call_date ? Math.max(0, Math.round((Date.parse(today()) - Date.parse(q.call_date)) / 864e5)) : null; const r = routes.find(x => x.id === q.route_id)

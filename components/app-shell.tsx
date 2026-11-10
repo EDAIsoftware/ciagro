@@ -13,7 +13,7 @@ export default function AppShell({ active, email, userId, mods, isAdmin, who, on
   const items = [
     { k: 'resumen', href: '/resumen', label: 'Panel general', Icon: LayoutDashboard, show: true },
     { k: 'combustible', href: '/', label: 'Combustible', Icon: Fuel, show: mods.includes('combustible') },
-    { k: 'inspecciones', href: '/inspecciones', label: 'Inspecciones y taller', Icon: ClipboardCheck, show: mods.includes('inspecciones') },
+    { k: 'inspecciones', href: '/inspecciones', label: mods.includes('inspecciones') ? 'Inspecciones y taller' : 'Inspecciones', Icon: ClipboardCheck, show: mods.includes('inspecciones') || mods.includes('inspecciones_ver') },
     { k: 'rutas', href: '/rutas', label: 'Rutas de servicio', Icon: RouteIcon, show: mods.includes('rutas') },
     { k: 'preparacion', href: '/preparacion', label: 'Preparación', Icon: Wrench, show: mods.includes('tractores') || mods.includes('implementos') },
     { k: 'usuarios', href: '/usuarios', label: 'Usuarios y permisos', Icon: Users, show: isAdmin },

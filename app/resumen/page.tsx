@@ -35,7 +35,7 @@ async function compute(mods: string[]): Promise<Data> {
       if (altas) d.alerts.push({ c: YELLOW, t: `${altas} solicitud${altas === 1 ? '' : 'es'} de servicio de prioridad alta sin ruta`, href: '/rutas' })
     }
   }
-  if (mods.includes('inspecciones')) {
+  if (mods.includes('inspecciones') || mods.includes('inspecciones_ver')) {
     const qs = `${month}-${half ? '01' : '16'}`, per = `${month}-${half ? 'Q1' : 'Q2'}`
     const d30 = ymd(new Date(Date.now() - 30 * 864e5))
     const [v, i, rq, w, o, m] = await Promise.all([supabase.from('insp_vehicles').select('id,odometer,km_next,insp_freq'), supabase.from('inspections').select('vehicle_id').eq('kind', 'inspeccion').gte('date', qs), supabase.from('insp_requests').select('vehicle_id').eq('period', per), supabase.from('insp_workshop').select('vehicle_id').is('exit_date', null), supabase.from('insp_observations').select('priority').eq('done', false), supabase.from('inspections').select('vehicle_id').eq('kind', 'inspeccion').gte('date', d30)])

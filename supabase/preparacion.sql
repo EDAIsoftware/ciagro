@@ -4,7 +4,7 @@
 -- 1. MÓDULOS: combustible, inspecciones, rutas, tractores, implementos
 alter table user_modules drop constraint if exists user_modules_module_check;
 alter table user_modules add constraint user_modules_module_check
-  check (module in ('combustible','inspecciones','rutas','tractores','implementos'));
+  check (module in ('combustible','inspecciones','inspecciones_ver','rutas','tractores','implementos'));
 
 -- Los usuarios que ya existen conservan su acceso actual a combustible e inspecciones
 insert into user_modules (user_id, module)

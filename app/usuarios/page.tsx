@@ -6,7 +6,7 @@ import AppShell from '@/components/app-shell'
 import { useAppSession } from '@/components/use-app-session'
 
 type P = { id: string; full_name: string | null; role: string }
-const MODS: [string, string][] = [['combustible', 'Combustible'], ['inspecciones', 'Inspecciones y taller'], ['rutas', 'Rutas de servicio'], ['tractores', 'Preparación de tractores'], ['implementos', 'Preparación de implementos']]
+const MODS: [string, string][] = [['combustible', 'Combustible'], ['inspecciones', 'Inspecciones y taller'], ['inspecciones_ver', 'Inspecciones (solo ver informes, sin taller)'], ['rutas', 'Rutas de servicio'], ['tractores', 'Preparación de tractores'], ['implementos', 'Preparación de implementos']]
 
 export default function UsuariosPage() {
   const { session, role, who, setWho, mods, ready } = useAppSession()
